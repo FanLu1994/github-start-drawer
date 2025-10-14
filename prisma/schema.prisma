@@ -1,0 +1,42 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("POSTGRES_URL")
+}
+
+model Repo {
+  id          String   @id @default(cuid())
+  name        String
+  fullName    String   @unique
+  description String?
+  stars       Int      @default(0)
+  forks       Int      @default(0)
+  language    String?
+  url         String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // AI描述字段
+  aiDescription String?
+  
+  // 标签列表字段
+  tags         String[]
+  
+  @@map("repos")
+}
+
+model Tag {
+  id   String @id @default(cuid())
+  name String @unique
+  
+  @@map("tags")
+}

@@ -1,103 +1,200 @@
-import Image from "next/image";
+"use client";
+
+import { useState } from "react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Search, Github, Code, Database, Cpu, Globe, Smartphone, Zap, Shield, Palette } from "lucide-react";
+import { BubbleBackground } from "@/components/animate-ui/components/backgrounds/bubble";
 
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  
+  // 图标数组
+  const icons = [Github, Code, Database, Cpu, Globe, Smartphone, Zap, Shield, Palette];
+  
+  // 模拟repo标签数据
+  const repoTags = [
+    "JavaScript", "TypeScript", "React", "Vue", "Node.js", 
+    "Python", "Java", "Go", "Rust", "C++", "Machine Learning", 
+    "Web Development", "Mobile", "DevOps", "Database"
+  ];
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  // 模拟repo数据
+  const repos = [
+    {
+      id: 1,
+      name: "awesome-javascript",
+      description: "A collection of awesome JavaScript libraries and resources",
+      stars: 15000,
+      tags: ["JavaScript", "Web Development"],
+      icon: icons[0] // Github
+    },
+    {
+      id: 2,
+      name: "react-native",
+      description: "A framework for building native apps with React",
+      stars: 12000,
+      tags: ["React", "Mobile", "JavaScript"],
+      icon: icons[5] // Smartphone
+    },
+    {
+      id: 3,
+      name: "tensorflow",
+      description: "An open source machine learning framework",
+      stars: 180000,
+      tags: ["Python", "Machine Learning"],
+      icon: icons[3] // Cpu
+    }
+  ];
+
+  // 根据搜索查询筛选标签
+  const filteredTags = repoTags.filter(tag =>
+    tag.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // 筛选逻辑
+  const filteredRepos = selectedTags.length === 0 
+    ? repos 
+    : repos.filter(repo => 
+        selectedTags.some(tag => repo.tags.includes(tag))
+      );
+
+  const toggleTag = (tag: string) => {
+    setSelectedTags(prev => 
+      prev.includes(tag) 
+        ? prev.filter(t => t !== tag)
+        : [...prev, tag]
+    );
+  };
+
+  return (
+    <BubbleBackground 
+      className="min-h-screen"
+      interactive={false}
+      colors={{
+        first: '18,113,255',
+        second: '221,74,255', 
+        third: '0,220,255',
+        fourth: '200,50,50',
+        fifth: '180,180,50',
+        sixth: '140,100,255'
+      }}
+    >
+      <div className="flex h-screen relative z-10">
+        {/* 左侧 Sidebar */}
+        <div className="w-80 backdrop-blur-md bg-white/20 border-r border-white/30 p-6 overflow-y-auto">
+          <h2 className="text-xl font-bold text-white mb-4">Repo 标签</h2>
+          
+          {/* 标签搜索器 */}
+          <div className="mb-6">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                type="text"
+                placeholder="搜索标签..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            {filteredTags.length > 0 ? (
+              filteredTags.map((tag) => (
+                <Button
+                  key={tag}
+                  onClick={() => toggleTag(tag)}
+                  variant={selectedTags.includes(tag) ? "default" : "outline"}
+                  className="w-full justify-start"
+                >
+                  {tag}
+                </Button>
+              ))
+            ) : (
+              <div className="text-center py-4 text-white/70">
+                <p>没有找到匹配的标签</p>
+              </div>
+            )}
+          </div>
+          
+          {selectedTags.length > 0 && (
+            <div className="mt-6">
+              <h3 className="text-sm font-medium text-white/80 mb-2">已选择标签:</h3>
+              <div className="flex flex-wrap gap-2">
+                {selectedTags.map((tag) => (
+                  <Badge
+                    key={tag}
+                    variant="secondary"
+                    className="cursor-pointer hover:bg-red-100"
+                    onClick={() => toggleTag(tag)}
+                  >
+                    {tag} ×
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+
+        {/* 右侧主内容区 */}
+        <div className="flex-1 p-6 overflow-y-auto backdrop-blur-sm bg-white/10">
+          <div className="mb-6">
+            <h1 className="text-2xl font-bold text-white mb-2">GitHub Star Drawer</h1>
+            <p className="text-white/80">
+              {selectedTags.length === 0 
+                ? "显示所有仓库" 
+                : `显示包含标签: ${selectedTags.join(", ")} 的仓库`
+              }
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredRepos.map((repo) => (
+              <Card key={repo.id} className="hover:shadow-lg transition-all duration-200 hover:scale-105 backdrop-blur-md bg-white/20 border-white/30">
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-1">
+                        <repo.icon className="h-6 w-6 text-white/80" />
+                        <CardTitle className="text-lg font-semibold text-white">
+                          {repo.name}
+                        </CardTitle>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm text-white/70">
+                        <span>⭐ {repo.stars.toLocaleString()}</span>
+                        <span>•</span>
+                        <span>stars</span>
+                      </div>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <CardDescription className="text-white/80 mb-4 line-clamp-2">
+                    {repo.description}
+                  </CardDescription>
+                  <div className="flex flex-wrap gap-2">
+                    {repo.tags.map((tag) => (
+                      <Badge key={tag} variant="secondary" className="text-xs">
+                        {tag}
+                      </Badge>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {filteredRepos.length === 0 && (
+            <div className="text-center py-12">
+              <p className="text-white/70">没有找到匹配的仓库</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </BubbleBackground>
   );
 }
