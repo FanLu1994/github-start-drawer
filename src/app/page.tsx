@@ -4,9 +4,10 @@ import { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { RepoCard } from "@/components/repo-card";
 import { GitHubConfigPrompt } from "@/components/github-config-prompt";
-import { Search, Github, Code, Database, Cpu, Globe, Smartphone, Zap, Shield, ChevronLeft, ChevronRight, Loader2, LucideIcon } from "lucide-react";
+import { Search, Github, Code, Database, Cpu, Globe, Smartphone, Zap, Shield, ChevronLeft, ChevronRight, Loader2, LucideIcon, CheckCircle, XCircle, Info } from "lucide-react";
 
 interface ConfigStatus {
   configured: boolean;
@@ -16,7 +17,7 @@ interface ConfigStatus {
 }
 
 interface GitHubRepo {
-  id: number;
+  id: string;
   name: string;
   full_name: string;
   description: string | null;
@@ -51,6 +52,34 @@ export default function Home() {
   const [pagination, setPagination] = useState<ReposResponse['pagination'] | null>(null);
   const [reposLoading, setReposLoading] = useState(false);
   const [reposError, setReposError] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState<{
+    current: number;
+    total: number;
+    status: string;
+  } | null>(null);
+  const [deletingRepos, setDeletingRepos] = useState<Set<string>>(new Set());
+  const [reanalyzingRepos, setReanalyzingRepos] = useState<Set<string>>(new Set());
+  const [toast, setToast] = useState<{
+    show: boolean;
+    type: 'success' | 'error' | 'info';
+    title: string;
+    description?: string;
+  }>({
+    show: false,
+    type: 'info',
+    title: '',
+    description: ''
+  });
+
+  // 显示Toast通知
+  const showToast = (type: 'success' | 'error' | 'info', title: string, description?: string) => {
+    setToast({ show: true, type, title, description });
+    // 3秒后自动隐藏
+    setTimeout(() => {
+      setToast(prev => ({ ...prev, show: false }));
+    }, 3000);
+  };
 
   // 检查API配置
   useEffect(() => {
@@ -179,6 +208,187 @@ export default function Home() {
     setSelectedTags([]); // 切换页面时清空选中的标签
   };
 
+  // 开始分析仓库
+  const startAnalysis = async () => {
+    setIsAnalyzing(true);
+    setAnalysisProgress({ current: 0, total: 0, status: '正在获取GitHub仓库...' });
+    
+    try {
+      const response = await fetch('/api/analysis/start', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('启动分析失败');
+      }
+
+      // 开始轮询进度
+      const pollProgress = async () => {
+        try {
+          const progressResponse = await fetch('/api/analysis/progress');
+          if (progressResponse.ok) {
+            const state = await progressResponse.json();
+            setAnalysisProgress(state.progress);
+            
+            if (state.progress.status === 'completed') {
+              // 分析完成，刷新数据
+              await fetchRepos(currentPage);
+              await fetchTags();
+              setIsAnalyzing(false);
+              setAnalysisProgress(null);
+            } else if (state.progress.status === 'error') {
+              throw new Error(state.error || '分析失败');
+            } else {
+              // 继续轮询
+              setTimeout(pollProgress, 1000);
+            }
+          }
+        } catch (error) {
+          console.error('获取进度失败:', error);
+          setIsAnalyzing(false);
+          setAnalysisProgress(null);
+        }
+      };
+
+      // 开始轮询
+      setTimeout(pollProgress, 1000);
+
+    } catch (error) {
+      console.error('启动分析失败:', error);
+      setIsAnalyzing(false);
+      setAnalysisProgress(null);
+    }
+  };
+
+  // 删除仓库
+  const handleDeleteRepo = async (id: string, fullName: string) => {
+    if (deletingRepos.has(id)) return; // 防止重复点击
+    
+    setDeletingRepos(prev => new Set(prev).add(id));
+    
+    try {
+      const response = await fetch(`/api/database/repos/delete?id=${id}`, {
+        method: 'DELETE'
+      });
+
+      if (response.ok) {
+        // 从本地状态中移除仓库
+        setRepos(prev => prev.filter(repo => repo.id !== id));
+        console.log(`仓库 ${fullName} 已删除`);
+        showToast('success', '删除成功', `仓库 ${fullName} 已删除`);
+      } else {
+        const error = await response.json();
+        console.error('删除仓库失败:', error);
+        showToast('error', '删除失败', error.error || '未知错误');
+      }
+    } catch (error) {
+      console.error('删除仓库失败:', error);
+      showToast('error', '删除失败', '请重试');
+    } finally {
+      setDeletingRepos(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(id);
+        return newSet;
+      });
+    }
+  };
+
+  // 取消星标
+  const handleUnstarRepo = async (id: string, fullName: string) => {
+    if (deletingRepos.has(id)) return; // 防止重复点击
+    
+    setDeletingRepos(prev => new Set(prev).add(id));
+    
+    try {
+      const [owner, repo] = fullName.split('/');
+      
+      // 先调用 GitHub API 取消星标
+      const unstarResponse = await fetch('/api/github/repos/unstar', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ owner, repo })
+      });
+
+      if (!unstarResponse.ok) {
+        const error = await unstarResponse.json();
+        console.error('取消星标失败:', error);
+        showToast('error', '取消星标失败', error.error || '未知错误');
+        return;
+      }
+
+      // 然后删除本地数据库中的记录
+      const deleteResponse = await fetch(`/api/database/repos/delete?id=${id}`, {
+        method: 'DELETE'
+      });
+
+      if (deleteResponse.ok) {
+        // 从本地状态中移除仓库
+        setRepos(prev => prev.filter(repo => repo.id !== id));
+        console.log(`仓库 ${fullName} 已取消星标并删除`);
+        showToast('success', '取消星标成功', `仓库 ${fullName} 已取消星标并删除`);
+      } else {
+        const error = await deleteResponse.json();
+        console.error('删除本地记录失败:', error);
+        showToast('error', '部分失败', `取消星标成功，但删除本地记录失败: ${error.error || '未知错误'}`);
+      }
+    } catch (error) {
+      console.error('取消星标失败:', error);
+      showToast('error', '取消星标失败', '请重试');
+    } finally {
+      setDeletingRepos(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(id);
+        return newSet;
+      });
+    }
+  };
+
+  // 重新分析仓库
+  const handleReanalyzeRepo = async (id: string, fullName: string) => {
+    if (reanalyzingRepos.has(id)) return; // 防止重复点击
+    
+    setReanalyzingRepos(prev => new Set(prev).add(id));
+    
+    try {
+      const response = await fetch('/api/analysis/reanalyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ id, fullName })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log(`仓库 ${fullName} 重新分析完成:`, result);
+        
+        // 刷新数据
+        await fetchRepos(currentPage);
+        await fetchTags();
+        
+        showToast('success', '重新分析完成', `新标签: ${result.repo.tags.join(', ')}`);
+      } else {
+        const error = await response.json();
+        console.error('重新分析失败:', error);
+        showToast('error', '重新分析失败', error.error || '未知错误');
+      }
+    } catch (error) {
+      console.error('重新分析失败:', error);
+      showToast('error', '重新分析失败', '请重试');
+    } finally {
+      setReanalyzingRepos(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(id);
+        return newSet;
+      });
+    }
+  };
+
   // 如果正在加载，显示加载状态
   if (isLoading) {
     return (
@@ -286,6 +496,49 @@ export default function Home() {
                 重试
               </Button>
             </div>
+          ) : repos.length === 0 && !isAnalyzing ? (
+            <div className="text-center py-12">
+              <div className="max-w-md mx-auto">
+                <Github className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
+                <h3 className="text-lg font-semibold mb-2">还没有仓库数据</h3>
+                <p className="text-muted-foreground mb-6">
+                  点击下方按钮开始从GitHub获取您星标的仓库并进行AI分析
+                </p>
+                <Button 
+                  onClick={startAnalysis} 
+                  size="lg"
+                  className="bg-primary hover:bg-primary/90"
+                >
+                  <Cpu className="w-4 h-4 mr-2" />
+                  开始分析仓库
+                </Button>
+              </div>
+            </div>
+          ) : isAnalyzing ? (
+            <div className="text-center py-12">
+              <div className="max-w-md mx-auto">
+                <Loader2 className="w-16 h-16 mx-auto mb-4 text-primary animate-spin" />
+                <h3 className="text-lg font-semibold mb-2">正在分析仓库</h3>
+                {analysisProgress && (
+                  <div className="space-y-2">
+                    <p className="text-muted-foreground">{analysisProgress.status}</p>
+                    {analysisProgress.total > 0 && (
+                      <div className="w-full bg-muted rounded-full h-2">
+                        <div 
+                          className="bg-primary h-2 rounded-full transition-all duration-300"
+                          style={{ 
+                            width: `${(analysisProgress.current / analysisProgress.total) * 100}%` 
+                          }}
+                        />
+                      </div>
+                    )}
+                    <p className="text-sm text-muted-foreground">
+                      {analysisProgress.current} / {analysisProgress.total}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
           ) : (
             <>
               <div className="flex flex-wrap gap-6">
@@ -305,6 +558,10 @@ export default function Home() {
                         tags={allRepoTags}
                         icon={IconComponent}
                         url={repo.html_url}
+                        fullName={repo.full_name}
+                        onDelete={handleDeleteRepo}
+                        onUnstar={handleUnstarRepo}
+                        onReanalyze={handleReanalyzeRepo}
                       />
                     </div>
                   );
@@ -349,6 +606,21 @@ export default function Home() {
           )}
         </div>
       </div>
+
+      {/* Toast 通知 */}
+      {toast.show && (
+        <div className="fixed top-4 right-4 z-50 max-w-sm">
+          <Alert variant={toast.type === 'error' ? 'destructive' : 'default'}>
+            {toast.type === 'success' && <CheckCircle className="h-4 w-4" />}
+            {toast.type === 'error' && <XCircle className="h-4 w-4" />}
+            {toast.type === 'info' && <Info className="h-4 w-4" />}
+            <AlertTitle>{toast.title}</AlertTitle>
+            {toast.description && (
+              <AlertDescription>{toast.description}</AlertDescription>
+            )}
+          </Alert>
+        </div>
+      )}
     </div>
   );
 }

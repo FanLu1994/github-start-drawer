@@ -115,6 +115,44 @@ export class GitHubClient {
   }
 
   /**
+   * 获取当前认证用户的所有 star 列表（分页获取全部）
+   */
+  async getAllStarredRepos(): Promise<GitHubRepo[]> {
+    const allRepos: GitHubRepo[] = [];
+    let page = 1;
+    const perPage = 100; // 每页最大数量
+    let hasMore = true;
+
+    while (hasMore) {
+      try {
+        const repos = await this.getMyStarredRepos({
+          per_page: perPage,
+          page,
+          sort: 'created',
+          direction: 'desc'
+        });
+
+        if (repos.length === 0) {
+          hasMore = false;
+        } else {
+          allRepos.push(...repos);
+          page++;
+          
+          // 如果返回的数量少于每页数量，说明已经是最后一页
+          if (repos.length < perPage) {
+            hasMore = false;
+          }
+        }
+      } catch (error) {
+        console.error(`获取第 ${page} 页星标仓库失败:`, error);
+        hasMore = false;
+      }
+    }
+
+    return allRepos;
+  }
+
+  /**
    * 获取仓库信息
    */
   async getRepo(owner: string, repo: string): Promise<GitHubRepo> {

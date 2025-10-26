@@ -61,6 +61,9 @@ export interface RepoAnalysisResult {
     languages: string[];
     frameworks: string[];
     features: string[];
+    technologies: string[];
+    tools: string[];
+    domains: string[];
     categories: string[];
   };
   confidence: number;

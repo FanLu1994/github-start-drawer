@@ -14,7 +14,7 @@ export class RepoService {
         language: data.language,
         url: data.url,
         aiDescription: data.aiDescription,
-        tags: data.tags || [],
+        tags: Array.isArray(data.tags) ? data.tags : [],
         isDeleted: data.isDeleted || false
       }
     })

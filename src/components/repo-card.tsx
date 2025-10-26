@@ -1,17 +1,33 @@
 import { useState } from "react";
-import { LucideIcon, ChevronDown, ChevronUp } from "lucide-react";
+import { LucideIcon, ChevronDown, ChevronUp, Trash2, Star, RefreshCw } from "lucide-react";
 
 interface RepoCardProps {
-  id: number;
+  id: string;
   name: string;
   description: string;
   stars: number;
   tags: string[];
   icon: LucideIcon;
   url?: string;
+  fullName?: string;
+  onDelete?: (id: string, fullName: string) => void;
+  onUnstar?: (id: string, fullName: string) => void;
+  onReanalyze?: (id: string, fullName: string) => void;
 }
 
-export function RepoCard({ name, description, stars, tags, icon: Icon, url }: RepoCardProps) {
+export function RepoCard({ 
+  id, 
+  name, 
+  description, 
+  stars, 
+  tags, 
+  icon: Icon, 
+  url, 
+  fullName,
+  onDelete,
+  onUnstar,
+  onReanalyze
+}: RepoCardProps) {
   const [isTagsExpanded, setIsTagsExpanded] = useState(false);
   const maxVisibleTags = 3; // 默认显示3个标签
 
@@ -24,6 +40,27 @@ export function RepoCard({ name, description, stars, tags, icon: Icon, url }: Re
   const handleTagsToggle = (e: React.MouseEvent) => {
     e.stopPropagation(); // 阻止事件冒泡，避免触发卡片点击
     setIsTagsExpanded(!isTagsExpanded);
+  };
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onDelete && fullName) {
+      onDelete(id, fullName);
+    }
+  };
+
+  const handleUnstar = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onUnstar && fullName) {
+      onUnstar(id, fullName);
+    }
+  };
+
+  const handleReanalyze = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onReanalyze && fullName) {
+      onReanalyze(id, fullName);
+    }
   };
 
   const visibleTags = isTagsExpanded ? tags : tags.slice(0, maxVisibleTags);
@@ -51,6 +88,31 @@ export function RepoCard({ name, description, stars, tags, icon: Icon, url }: Re
               <span>•</span>
               <span>stars</span>
             </div>
+          </div>
+          
+          {/* Action Buttons */}
+          <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            <button
+              onClick={handleReanalyze}
+              className="p-2 rounded-full bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 hover:text-blue-300 transition-colors"
+              title="重新分析"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
+            <button
+              onClick={handleUnstar}
+              className="p-2 rounded-full bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400 hover:text-yellow-300 transition-colors"
+              title="取消星标"
+            >
+              <Star className="w-4 h-4 fill-current" />
+            </button>
+            <button
+              onClick={handleDelete}
+              className="p-2 rounded-full bg-red-500/20 hover:bg-red-500/30 text-red-400 hover:text-red-300 transition-colors"
+              title="删除仓库"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
           </div>
         </div>
 

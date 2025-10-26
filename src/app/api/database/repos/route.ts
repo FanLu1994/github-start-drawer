@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
 
     // 转换为前端需要的格式
     const formattedRepos = repos.map(repo => ({
-      id: parseInt(repo.id), // 前端期望的是number类型
+      id: repo.id, // 保持字符串类型，因为数据库ID是CUID字符串
       name: repo.name,
       full_name: repo.fullName,
       description: repo.description,

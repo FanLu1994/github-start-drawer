@@ -62,7 +62,6 @@ export interface GitHubTreeItem {
   type: 'blob' | 'tree';
   sha: string;
   size?: number;
-  size?: number;
   url: string;
 }
 
