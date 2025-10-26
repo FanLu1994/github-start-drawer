@@ -31,6 +31,9 @@ model Repo {
   // 标签列表字段
   tags         String[]
   
+  // 软删除字段
+  isDeleted    Boolean  @default(false)
+  
   @@map("repos")
 }
 

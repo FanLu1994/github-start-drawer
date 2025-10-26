@@ -11,6 +11,7 @@ export interface Repo {
   updatedAt: Date
   aiDescription: string | null
   tags: string[]
+  isDeleted: boolean
 }
 
 export interface Tag {
@@ -28,6 +29,7 @@ export interface CreateRepoData {
   url: string
   aiDescription?: string
   tags?: string[]
+  isDeleted?: boolean
 }
 
 export interface UpdateRepoData {
@@ -40,4 +42,5 @@ export interface UpdateRepoData {
   url?: string
   aiDescription?: string
   tags?: string[]
+  isDeleted?: boolean
 }

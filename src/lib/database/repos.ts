@@ -14,7 +14,8 @@ export class RepoService {
         language: data.language,
         url: data.url,
         aiDescription: data.aiDescription,
-        tags: data.tags || []
+        tags: data.tags || [],
+        isDeleted: data.isDeleted || false
       }
     })
   }
@@ -22,20 +23,27 @@ export class RepoService {
   // 根据ID获取仓库
   static async findById(id: string) {
     return await prisma.repo.findUnique({
-      where: { id }
+      where: { 
+        id,
+        isDeleted: false
+      }
     })
   }
 
   // 根据fullName获取仓库
   static async findByFullName(fullName: string) {
     return await prisma.repo.findUnique({
-      where: { fullName }
+      where: { 
+        fullName,
+        isDeleted: false
+      }
     })
   }
 
   // 获取所有仓库
   static async findAll() {
     return await prisma.repo.findMany({
+      where: { isDeleted: false },
       orderBy: { stars: 'desc' }
     })
   }
@@ -44,6 +52,7 @@ export class RepoService {
   static async findByTags(tags: string[]) {
     return await prisma.repo.findMany({
       where: {
+        isDeleted: false,
         tags: {
           hasSome: tags
         }
@@ -56,6 +65,7 @@ export class RepoService {
   static async search(query: string) {
     return await prisma.repo.findMany({
       where: {
+        isDeleted: false,
         OR: [
           { name: { contains: query, mode: 'insensitive' } },
           { description: { contains: query, mode: 'insensitive' } },
@@ -79,15 +89,40 @@ export class RepoService {
         ...(data.language !== undefined && { language: data.language }),
         ...(data.url && { url: data.url }),
         ...(data.aiDescription !== undefined && { aiDescription: data.aiDescription }),
-        ...(data.tags && { tags: data.tags })
+        ...(data.tags && { tags: data.tags }),
+        ...(data.isDeleted !== undefined && { isDeleted: data.isDeleted })
       }
     })
   }
 
-  // 删除仓库
+  // 软删除仓库
   static async delete(id: string) {
+    return await prisma.repo.update({
+      where: { id },
+      data: { isDeleted: true }
+    })
+  }
+
+  // 硬删除仓库（真正从数据库删除）
+  static async hardDelete(id: string) {
     return await prisma.repo.delete({
       where: { id }
+    })
+  }
+
+  // 恢复已删除的仓库
+  static async restore(id: string) {
+    return await prisma.repo.update({
+      where: { id },
+      data: { isDeleted: false }
+    })
+  }
+
+  // 获取已删除的仓库
+  static async findDeleted() {
+    return await prisma.repo.findMany({
+      where: { isDeleted: true },
+      orderBy: { updatedAt: 'desc' }
     })
   }
 
@@ -103,7 +138,8 @@ export class RepoService {
         language: repo.language,
         url: repo.url,
         aiDescription: repo.aiDescription,
-        tags: repo.tags || []
+        tags: repo.tags || [],
+        isDeleted: repo.isDeleted || false
       })),
       skipDuplicates: true
     })

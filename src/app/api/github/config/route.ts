@@ -1,32 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GitHubConfigManager } from '@/lib/github';
+import { GitHubConfigManager } from '@/lib/github/config';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const configManager = GitHubConfigManager.getInstance();
-    const config = configManager.getConfig();
     const isConfigured = configManager.validateConfig();
-
-    return NextResponse.json({
-      isConfigured,
-      hasToken: !!configManager.getToken(),
-      config: isConfigured ? {
-        baseURL: config?.baseURL,
-        timeout: config?.timeout
-      } : null,
-      message: isConfigured ? 'GitHub token 已从环境变量加载' : '请在环境变量中设置 GITHUB_TOKEN'
-    });
-
-  } catch (error) {
-    console.error('获取 GitHub 配置错误:', error);
     
+    return NextResponse.json({
+      configured: isConfigured,
+      hasToken: !!configManager.getToken(),
+      message: isConfigured 
+        ? 'GitHub API 配置正常' 
+        : '请配置 GITHUB_TOKEN 环境变量'
+    });
+  } catch (error) {
+    console.error('GitHub 配置检查失败:', error);
     return NextResponse.json(
       { 
-        error: '获取配置失败',
-        details: error instanceof Error ? error.message : '未知错误'
+        configured: false, 
+        hasToken: false,
+        message: '配置检查失败',
+        error: error instanceof Error ? error.message : '未知错误'
       },
       { status: 500 }
     );
   }
 }
-

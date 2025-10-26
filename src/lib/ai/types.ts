@@ -41,3 +41,35 @@ export interface AIRequestOptions {
   stream?: boolean;
   systemPrompt?: string;
 }
+
+// Repo AI 分析相关类型
+export interface RepoAnalysisRequest {
+  name: string;
+  fullName: string;
+  description?: string;
+  language?: string;
+  stars?: number;
+  forks?: number;
+  url: string;
+  readmeContent?: string;
+  fileStructure?: string[];
+}
+
+export interface RepoAnalysisResult {
+  description: string;
+  tags: {
+    languages: string[];
+    frameworks: string[];
+    features: string[];
+    categories: string[];
+  };
+  confidence: number;
+  reasoning: string;
+}
+
+export interface RepoAnalysisResponse {
+  success: boolean;
+  data?: RepoAnalysisResult;
+  error?: string;
+  timestamp: Date;
+}
