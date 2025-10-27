@@ -3,6 +3,7 @@ import { GitHubClient } from '@/lib/github';
 import { RepoService } from '@/lib/database/repos';
 import { TagService } from '@/lib/database/tags';
 import { RepoAnalyzer } from '@/lib/ai';
+import { deduplicateAndNormalizeTags } from '@/lib/utils';
 
 export async function POST(request: NextRequest) {
   try {
@@ -60,22 +61,80 @@ export async function POST(request: NextRequest) {
     // 获取最新的仓库信息
     const repoDetails = await githubClient.getRepo(owner, repoName);
     
-    // 获取README内容
+    // 获取README内容（支持多种格式）
     let readmeContent = '';
-    try {
-      const readme = await githubClient.getRepoContents(owner, repoName, 'README.md');
-      if (readme && typeof readme === 'string') {
-        readmeContent = readme;
+    const readmeFiles = ['README.md', 'README.rst', 'README.txt', 'README', 'readme.md', 'readme.rst', 'readme.txt', 'readme'];
+    
+    for (const readmeFile of readmeFiles) {
+      try {
+        const readme = await githubClient.getFileContent(owner, repoName, readmeFile);
+        if (readme && readme.content) {
+          // 解码 base64 内容
+          readmeContent = Buffer.from(readme.content, 'base64').toString('utf-8');
+          console.log(`成功获取 ${repo.fullName} 的 ${readmeFile}`);
+          break;
+        }
+      } catch {
+        // 继续尝试下一个文件
+        continue;
       }
-    } catch (error) {
-      console.log(`无法获取 ${repo.fullName} 的README:`, error);
+    }
+    
+    if (!readmeContent) {
+      console.log(`仓库 ${repo.fullName} 没有找到任何 README 文件`);
     }
 
-    // 获取文件结构
+    // 获取文件结构（增强版，优先获取重要文件）
     let fileStructure: string[] = [];
+    let importantFiles: string[] = [];
+    
     try {
       const tree = await githubClient.getRepoTree(owner, repoName, 'HEAD', true);
-      fileStructure = tree.slice(0, 50).map(item => item.path); // 限制文件数量
+      
+      // 定义重要文件模式
+      const importantPatterns = [
+        /package\.json$/i,
+        /requirements\.txt$/i,
+        /pom\.xml$/i,
+        /Cargo\.toml$/i,
+        /composer\.json$/i,
+        /Gemfile$/i,
+        /Dockerfile$/i,
+        /docker-compose\.yml$/i,
+        /Makefile$/i,
+        /CMakeLists\.txt$/i,
+        /\.github\/workflows\//i,
+        /tsconfig\.json$/i,
+        /webpack\.config\./i,
+        /vite\.config\./i,
+        /next\.config\./i,
+        /nuxt\.config\./i,
+        /\.env\.example$/i,
+        /README/i,
+        /LICENSE/i,
+        /CHANGELOG/i,
+        /CONTRIBUTING/i
+      ];
+      
+      // 分离重要文件和普通文件
+      const allFiles = tree.map(item => item.path);
+      importantFiles = allFiles.filter(path => 
+        importantPatterns.some(pattern => pattern.test(path))
+      );
+      
+      // 获取其他文件（排除重要文件）
+      const otherFiles = allFiles.filter(path => 
+        !importantPatterns.some(pattern => pattern.test(path))
+      );
+      
+      // 优先显示重要文件，然后显示其他文件（限制总数）
+      fileStructure = [
+        ...importantFiles.slice(0, 20), // 最多20个重要文件
+        ...otherFiles.slice(0, 30)      // 最多30个其他文件
+      ];
+      
+      console.log(`获取 ${repo.fullName} 文件结构: ${allFiles.length} 个文件，其中 ${importantFiles.length} 个重要文件`);
+      
     } catch (error) {
       console.log(`无法获取 ${repo.fullName} 的文件结构:`, error);
     }
@@ -94,19 +153,8 @@ export async function POST(request: NextRequest) {
     });
 
     if (analysisResult.success && analysisResult.data) {
-      // 合并所有标签分类到一个数组中
-      const allTags = [
-        ...(analysisResult.data.tags.languages || []),
-        ...(analysisResult.data.tags.frameworks || []),
-        ...(analysisResult.data.tags.features || []),
-        ...(analysisResult.data.tags.technologies || []),
-        ...(analysisResult.data.tags.tools || []),
-        ...(analysisResult.data.tags.domains || []),
-        ...(analysisResult.data.tags.categories || [])
-      ];
-
-      // 去重标签
-      const uniqueTags = [...new Set(allTags)];
+      // 使用工具函数进行标签去重和标准化
+      const uniqueTags = deduplicateAndNormalizeTags(analysisResult.data.tags);
 
       // 将标签保存到 tags 表
       if (uniqueTags.length > 0) {

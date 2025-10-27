@@ -62,6 +62,7 @@ export class RepoAnalyzer {
    - 生成简洁、准确的中文描述（50-200字）
    - 突出仓库的主要功能和特点
    - **必须使用中文，不能使用英文**
+   - **当没有README时，重点分析文件结构和配置文件**
 
 2. **标签分类**：
    - **语言标签**：识别主要编程语言（如 JavaScript, TypeScript, Python, Java, Go, Rust 等）
@@ -73,7 +74,14 @@ export class RepoAnalyzer {
    - **分类标签**：识别项目类型（如 前端, 后端, 全栈, 移动端, 桌面应用, 命令行工具 等）
    - **所有标签必须使用中文，要具体、有意义，不要过于宽泛**
 
-3. **输出格式**：
+3. **无README时的特殊处理**：
+   - 重点分析文件结构中的配置文件（package.json, requirements.txt, pom.xml, Cargo.toml等）
+   - 通过目录结构推断项目架构（src/, lib/, app/, components/等）
+   - 通过测试文件推断项目质量（test/, tests/, __tests__/等）
+   - 通过构建文件推断部署方式（Dockerfile, docker-compose.yml, .github/workflows/等）
+   - 通过文档目录推断项目完整性（docs/, documentation/等）
+
+4. **输出格式**：
    请严格按照以下JSON格式输出，不要包含任何其他内容：
    {
      "description": "仓库的中文描述（必须使用中文，50-200字）",
@@ -95,7 +103,8 @@ export class RepoAnalyzer {
 - confidence 范围 0-1，表示分析结果的置信度
 - 标签要准确、简洁，避免重复，必须使用中文
 - 如果信息不足，请在 reasoning 中说明（使用中文）
-- 不要使用任何英文单词或短语`;
+- 不要使用任何英文单词或短语
+- 当没有README时，confidence可以适当降低，但要在reasoning中说明原因`;
   }
 
   /**
@@ -125,12 +134,53 @@ export class RepoAnalyzer {
       prompt += `\n- Fork数：${repoData.forks}`;
     }
 
+    // 处理 README 内容
     if (repoData.readmeContent) {
       prompt += `\n\n**README内容**：\n${repoData.readmeContent}`;
+    } else {
+      prompt += `\n\n**注意**：此仓库没有 README 文件，请主要基于仓库名称、描述、语言和文件结构进行分析。`;
     }
 
     if (repoData.fileStructure && repoData.fileStructure.length > 0) {
       prompt += `\n\n**文件结构**：\n${repoData.fileStructure.join('\n')}`;
+      
+      // 如果没有 README，提供额外的文件结构分析指导
+      if (!repoData.readmeContent) {
+        prompt += `\n\n**文件结构分析指导**（无README时使用）：
+- 查看配置文件（package.json, requirements.txt, pom.xml, Cargo.toml 等）推断项目类型和依赖
+- 查看源代码目录结构推断架构模式（src/, lib/, app/, components/等）
+- 查看测试文件推断项目质量（test/, tests/, __tests__/等）
+- 查看文档目录推断项目完整性（docs/, documentation/等）
+- 查看构建文件推断部署方式（Dockerfile, docker-compose.yml, .github/workflows/等）
+- 查看配置文件推断技术栈（tsconfig.json, webpack.config.js, vite.config.js等）
+- 查看许可证和贡献指南推断项目开放程度`;
+        
+        // 分析文件结构中的关键信息
+        const configFiles = repoData.fileStructure.filter(file => 
+          /\.(json|toml|yml|yaml|txt|xml)$/i.test(file) && 
+          !/\.(md|txt)$/i.test(file)
+        );
+        
+        const testFiles = repoData.fileStructure.filter(file => 
+          /test|spec|__tests__/i.test(file)
+        );
+        
+        const docFiles = repoData.fileStructure.filter(file => 
+          /docs?|documentation|wiki/i.test(file)
+        );
+        
+        if (configFiles.length > 0) {
+          prompt += `\n\n**发现的配置文件**：${configFiles.slice(0, 5).join(', ')}`;
+        }
+        
+        if (testFiles.length > 0) {
+          prompt += `\n**发现的测试文件**：${testFiles.slice(0, 3).join(', ')}`;
+        }
+        
+        if (docFiles.length > 0) {
+          prompt += `\n**发现的文档文件**：${docFiles.slice(0, 3).join(', ')}`;
+        }
+      }
     }
 
     prompt += `\n\n请根据以上信息生成准确的描述和标签。**重要：所有输出必须使用中文，包括描述、标签和推理过程。**`;

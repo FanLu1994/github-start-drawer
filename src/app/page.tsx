@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { RepoCard } from "@/components/repo-card";
 import { GitHubConfigPrompt } from "@/components/github-config-prompt";
-import { Search, Github, Code, Database, Cpu, Globe, Smartphone, Zap, Shield, ChevronLeft, ChevronRight, Loader2, LucideIcon, CheckCircle, XCircle, Info } from "lucide-react";
+import { Search, Github, Code, Database, Cpu, Globe, Smartphone, Zap, Shield, ChevronLeft, ChevronRight, Loader2, LucideIcon, CheckCircle, XCircle, Info, Shuffle } from "lucide-react";
 
 interface ConfigStatus {
   configured: boolean;
@@ -43,6 +43,7 @@ interface ReposResponse {
 export default function Home() {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [repoSearchQuery, setRepoSearchQuery] = useState<string>("");
   const [githubConfig, setGithubConfig] = useState<ConfigStatus | null>(null);
   const [deepseekConfig, setDeepseekConfig] = useState<ConfigStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -60,6 +61,7 @@ export default function Home() {
   } | null>(null);
   const [deletingRepos, setDeletingRepos] = useState<Set<string>>(new Set());
   const [reanalyzingRepos, setReanalyzingRepos] = useState<Set<string>>(new Set());
+  const [isInitialized, setIsInitialized] = useState(false);
   const [toast, setToast] = useState<{
     show: boolean;
     type: 'success' | 'error' | 'info';
@@ -117,12 +119,19 @@ export default function Home() {
   }, []);
 
   // 获取仓库数据
-  const fetchRepos = async (page: number = 1) => {
+  const fetchRepos = async (page: number = 1, search: string = '') => {
     setReposLoading(true);
     setReposError(null);
     
     try {
-      const response = await fetch(`/api/database/repos?page=${page}&per_page=12`);
+      const params = new URLSearchParams();
+      params.append('page', page.toString());
+      params.append('per_page', '12');
+      if (search) {
+        params.append('search', search);
+      }
+      
+      const response = await fetch(`/api/database/repos?${params.toString()}`);
       if (!response.ok) {
         throw new Error('获取仓库数据失败');
       }
@@ -140,27 +149,48 @@ export default function Home() {
   };
 
   // 获取标签数据
-  const fetchTags = async () => {
+  const fetchTags = async (random: boolean = false, search: string = '') => {
     try {
-      const response = await fetch('/api/database/tags');
+      const params = new URLSearchParams();
+      if (random) {
+        params.append('random', 'true');
+        params.append('limit', '20');
+      }
+      if (search) {
+        params.append('search', search);
+      }
+      
+      const response = await fetch(`/api/database/tags?${params.toString()}`);
       if (!response.ok) {
         throw new Error('获取标签数据失败');
       }
       
       const data = await response.json();
-      setAllTags(data.tags.sort());
+      setAllTags(data.tags);
     } catch (error) {
       console.error('获取标签失败:', error);
     }
   };
 
-  // 当配置检查完成后，获取数据
+  // 当配置检查完成后，初始化加载数据
   useEffect(() => {
-    if (githubConfig?.configured && deepseekConfig?.configured) {
-      fetchRepos(currentPage);
-      fetchTags();
+    if (githubConfig?.configured && deepseekConfig?.configured && !isInitialized) {
+      fetchRepos(1, ''); // 初始化时加载第一页，无搜索条件
+      fetchTags(true); // 默认加载随机标签
+      setIsInitialized(true);
     }
-  }, [githubConfig?.configured, deepseekConfig?.configured, currentPage]);
+  }, [githubConfig?.configured, deepseekConfig?.configured, isInitialized]);
+
+  // 标签搜索独立处理 - 只在用户主动搜索时触发
+  // 移除了自动搜索，改为手动触发
+
+  // 仓库搜索和分页独立处理
+  useEffect(() => {
+    if (isInitialized) {
+      // 只有在搜索条件或页码变化时才重新获取数据
+      fetchRepos(currentPage, repoSearchQuery);
+    }
+  }, [repoSearchQuery, currentPage, isInitialized]);
 
   // 图标映射
   const getIconForLanguage = (language: string | null): LucideIcon => {
@@ -179,11 +209,6 @@ export default function Home() {
     };
     return iconMap[language || ''] || iconMap.default;
   };
-
-  // 根据搜索查询筛选标签
-  const filteredTags = allTags.filter(tag =>
-    tag.toLowerCase().includes(searchQuery.toLowerCase())
-  );
 
   // 筛选逻辑
   const filteredRepos = selectedTags.length === 0 
@@ -206,6 +231,27 @@ export default function Home() {
   const handlePageChange = (newPage: number) => {
     setCurrentPage(newPage);
     setSelectedTags([]); // 切换页面时清空选中的标签
+  };
+
+  // 随机获取标签
+  const handleRandomTags = () => {
+    fetchTags(true);
+  };
+
+  // 搜索标签
+  const handleSearchTags = () => {
+    if (searchQuery.trim()) {
+      fetchTags(false, searchQuery);
+    } else {
+      // 如果搜索框为空，加载随机标签
+      fetchTags(true);
+    }
+  };
+
+  // 搜索仓库
+  const handleSearchRepos = () => {
+    setCurrentPage(1);
+    fetchRepos(1, repoSearchQuery);
   };
 
   // 开始分析仓库
@@ -235,8 +281,8 @@ export default function Home() {
             
             if (state.progress.status === 'completed') {
               // 分析完成，刷新数据
-              await fetchRepos(currentPage);
-              await fetchTags();
+              await fetchRepos(currentPage, repoSearchQuery);
+              await fetchTags(true); // 重新加载随机标签
               setIsAnalyzing(false);
               setAnalysisProgress(null);
             } else if (state.progress.status === 'error') {
@@ -415,7 +461,7 @@ export default function Home() {
           
           {/* 标签搜索器 */}
           <div className="mb-6">
-            <div className="relative">
+            <div className="relative mb-2">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 type="text"
@@ -423,13 +469,37 @@ export default function Home() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-10"
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter') {
+                    handleSearchTags();
+                  }
+                }}
               />
+            </div>
+            <div className="flex gap-2">
+              <Button 
+                onClick={handleSearchTags}
+                variant="outline" 
+                size="sm"
+                className="flex-1"
+              >
+                搜索标签
+              </Button>
+              <Button 
+                onClick={handleRandomTags}
+                variant="outline" 
+                size="sm"
+                className="flex-1"
+              >
+                <Shuffle className="h-4 w-4 mr-1" />
+                随机
+              </Button>
             </div>
           </div>
 
           <div className="space-y-2">
-            {filteredTags.length > 0 ? (
-              filteredTags.map((tag) => (
+            {allTags.length > 0 ? (
+              allTags.map((tag) => (
                 <Button
                   key={tag}
                   onClick={() => toggleTag(tag)}
@@ -472,13 +542,56 @@ export default function Home() {
         {/* 右侧主内容区 */}
         <div className="flex-1 p-6 overflow-y-auto">
           <div className="mb-6">
-            <h1 className="text-2xl font-bold text-foreground mb-2">GitHub Star Drawer</h1>
-            <p className="text-foreground/80">
-              {selectedTags.length === 0 
-                ? "显示所有仓库" 
-                : `显示包含标签: ${selectedTags.join(", ")} 的仓库`
+            <div className="flex items-center justify-between mb-2">
+              <h1 className="text-2xl font-bold text-foreground">GitHub Star Drawer</h1>
+              <Button 
+                onClick={startAnalysis} 
+                disabled={isAnalyzing}
+                className="bg-primary hover:bg-primary/90"
+              >
+                {isAnalyzing ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    分析中...
+                  </>
+                ) : (
+                  <>
+                    <Cpu className="w-4 h-4 mr-2" />
+                    开始分析
+                  </>
+                )}
+              </Button>
+            </div>
+            <p className="text-foreground/80 mb-4">
+              {repoSearchQuery 
+                ? `搜索结果: "${repoSearchQuery}"`
+                : selectedTags.length === 0 
+                  ? "显示所有仓库" 
+                  : `显示包含标签: ${selectedTags.join(", ")} 的仓库`
               }
             </p>
+            
+            {/* 仓库搜索框 */}
+            <div className="flex gap-2 mb-4">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="text"
+                  placeholder="搜索仓库名称或描述..."
+                  value={repoSearchQuery}
+                  onChange={(e) => setRepoSearchQuery(e.target.value)}
+                  className="pl-10"
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') {
+                      handleSearchRepos();
+                    }
+                  }}
+                />
+              </div>
+              <Button onClick={handleSearchRepos} variant="outline">
+                搜索
+              </Button>
+            </div>
           </div>
 
           {/* 仓库列表 */}
@@ -492,7 +605,7 @@ export default function Home() {
           ) : reposError ? (
             <div className="text-center py-12">
               <p className="text-destructive mb-4">{reposError}</p>
-              <Button onClick={() => fetchRepos(currentPage)} variant="outline">
+              <Button onClick={() => fetchRepos(currentPage, repoSearchQuery)} variant="outline">
                 重试
               </Button>
             </div>

@@ -5,12 +5,17 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search') || '';
+    const random = searchParams.get('random') === 'true';
+    const limit = parseInt(searchParams.get('limit') || '20');
 
     let tags;
 
     if (search) {
       // 搜索标签
       tags = await TagService.search(search);
+    } else if (random) {
+      // 随机获取标签
+      tags = await TagService.findRandom(limit);
     } else {
       // 获取所有标签
       tags = await TagService.findAll();

@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
       id: repo.id, // 保持字符串类型，因为数据库ID是CUID字符串
       name: repo.name,
       full_name: repo.fullName,
-      description: repo.description,
+      description: repo.aiDescription || repo.description, // 优先使用AI生成的描述，如果没有则使用原始描述
       stargazers_count: repo.stars,
       language: repo.language,
       topics: repo.tags || [],

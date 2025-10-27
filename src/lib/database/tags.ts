@@ -72,6 +72,16 @@ export class TagService {
     })
   }
 
+  // 随机获取标签
+  static async findRandom(limit: number = 20) {
+    // 使用原生SQL实现真正的随机排序
+    return await prisma.$queryRaw`
+      SELECT * FROM tags 
+      ORDER BY RANDOM() 
+      LIMIT ${limit}
+    ` as any[];
+  }
+
   // 根据名称删除标签
   static async deleteByName(name: string) {
     return await prisma.tag.delete({

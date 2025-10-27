@@ -6,6 +6,9 @@ export interface AnalysisProgress {
   current: number;
   total: number;
   status: string;
+  completed: number;
+  failed: number;
+  processing: string[];
 }
 
 export interface AnalysisState {
@@ -20,7 +23,10 @@ class AnalysisStateManager {
     progress: {
       current: 0,
       total: 0,
-      status: 'idle'
+      status: 'idle',
+      completed: 0,
+      failed: 0,
+      processing: []
     },
     error: null
   };
@@ -47,10 +53,34 @@ class AnalysisStateManager {
       progress: {
         current: 0,
         total: 0,
-        status: 'idle'
+        status: 'idle',
+        completed: 0,
+        failed: 0,
+        processing: []
       },
       error: null
     };
+  }
+
+  // 添加并行任务管理方法
+  addProcessing(repoName: string): void {
+    if (!this.state.progress.processing.includes(repoName)) {
+      this.state.progress.processing.push(repoName);
+    }
+  }
+
+  removeProcessing(repoName: string): void {
+    this.state.progress.processing = this.state.progress.processing.filter(name => name !== repoName);
+  }
+
+  incrementCompleted(): void {
+    this.state.progress.completed++;
+    this.state.progress.current = this.state.progress.completed + this.state.progress.failed;
+  }
+
+  incrementFailed(): void {
+    this.state.progress.failed++;
+    this.state.progress.current = this.state.progress.completed + this.state.progress.failed;
   }
 }
 
