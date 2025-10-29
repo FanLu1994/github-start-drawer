@@ -168,7 +168,8 @@ export async function POST(request: NextRequest) {
         forks: repoDetails.forks_count,
         language: repoDetails.language || undefined,
         aiDescription: analysisResult.data.description,
-        tags: uniqueTags
+        topics: repoDetails.topics || [],
+        aiTags: uniqueTags
       });
 
       return NextResponse.json({
@@ -177,7 +178,8 @@ export async function POST(request: NextRequest) {
           id: repo.id,
           name: repo.name,
           fullName: repo.fullName,
-          tags: uniqueTags
+          topics: repoDetails.topics || [],
+          aiTags: uniqueTags
         }
       });
 

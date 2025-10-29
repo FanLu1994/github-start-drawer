@@ -1,9 +1,24 @@
 import { prisma } from '@/lib/prisma'
 import { CreateRepoData, UpdateRepoData } from './types'
+import { TagService } from './tags'
 
 export class RepoService {
   // 创建仓库
   static async create(data: CreateRepoData) {
+    // 处理 AI 标签关联
+    const repoAiTagsData = data.aiTags && data.aiTags.length > 0
+      ? await Promise.all(
+          data.aiTags.map(async (tagName) => {
+            const tag = await TagService.findOrCreate(tagName)
+            return {
+              tag: {
+                connect: { id: tag.id }
+              }
+            }
+          })
+        )
+      : []
+
     return await prisma.repo.create({
       data: {
         name: data.name,
@@ -14,8 +29,18 @@ export class RepoService {
         language: data.language,
         url: data.url,
         aiDescription: data.aiDescription,
-        tags: Array.isArray(data.tags) ? data.tags : [],
+        topics: Array.isArray(data.topics) ? data.topics : [],
+        repoAiTags: {
+          create: repoAiTagsData
+        },
         isDeleted: data.isDeleted || false
+      },
+      include: {
+        repoAiTags: {
+          include: {
+            tag: true
+          }
+        }
       }
     })
   }
@@ -26,16 +51,55 @@ export class RepoService {
       where: { 
         id,
         isDeleted: false
+      },
+      include: {
+        repoAiTags: {
+          include: {
+            tag: true
+          }
+        }
       }
     })
   }
 
-  // 根据fullName获取仓库
+  // 根据fullName获取仓库（包括已删除的）
   static async findByFullName(fullName: string) {
     return await prisma.repo.findUnique({
       where: { 
-        fullName,
-        isDeleted: false
+        fullName
+      },
+      include: {
+        repoAiTags: {
+          include: {
+            tag: true
+          }
+        }
+      }
+    })
+  }
+
+  // 根据fullName获取未删除的仓库
+  static async findByFullNameActive(fullName: string) {
+    const repo = await prisma.repo.findUnique({
+      where: { 
+        fullName
+      }
+    })
+    
+    if (!repo || repo.isDeleted) {
+      return null
+    }
+    
+    return await prisma.repo.findUnique({
+      where: { 
+        fullName
+      },
+      include: {
+        repoAiTags: {
+          include: {
+            tag: true
+          }
+        }
       }
     })
   }
@@ -44,20 +108,53 @@ export class RepoService {
   static async findAll() {
     return await prisma.repo.findMany({
       where: { isDeleted: false },
-      orderBy: { stars: 'desc' }
+      orderBy: { stars: 'desc' },
+      include: {
+        repoAiTags: {
+          include: {
+            tag: true
+          }
+        }
+      }
     })
   }
 
-  // 根据标签筛选仓库
+  // 根据标签筛选仓库（支持 topics 和 aiTags）
   static async findByTags(tags: string[]) {
+    // 先查找标签ID
+    const tagRecords = await prisma.tag.findMany({
+      where: {
+        name: { in: tags }
+      }
+    })
+    const tagIds = tagRecords.map(t => t.id)
+
     return await prisma.repo.findMany({
       where: {
         isDeleted: false,
-        tags: {
-          hasSome: tags
-        }
+        OR: [
+          {
+            topics: {
+              hasSome: tags
+            }
+          },
+          {
+            repoAiTags: {
+              some: {
+                tagId: { in: tagIds }
+              }
+            }
+          }
+        ]
       },
-      orderBy: { stars: 'desc' }
+      orderBy: { stars: 'desc' },
+      include: {
+        repoAiTags: {
+          include: {
+            tag: true
+          }
+        }
+      }
     })
   }
 
@@ -72,12 +169,45 @@ export class RepoService {
           { aiDescription: { contains: query, mode: 'insensitive' } }
         ]
       },
-      orderBy: { stars: 'desc' }
+      orderBy: { stars: 'desc' },
+      include: {
+        repoAiTags: {
+          include: {
+            tag: true
+          }
+        }
+      }
     })
   }
 
   // 更新仓库
   static async update(id: string, data: UpdateRepoData) {
+    // 处理 AI 标签关联更新
+    if (data.aiTags !== undefined) {
+      // 先删除所有现有关联
+      await prisma.repoAiTag.deleteMany({
+        where: { repoId: id }
+      })
+
+      // 创建新的关联
+      if (data.aiTags.length > 0) {
+        const tagIds = await Promise.all(
+          data.aiTags.map(async (tagName) => {
+            const tag = await TagService.findOrCreate(tagName)
+            return tag.id
+          })
+        )
+
+        await prisma.repoAiTag.createMany({
+          data: tagIds.map(tagId => ({
+            repoId: id,
+            tagId: tagId
+          })),
+          skipDuplicates: true
+        })
+      }
+    }
+
     return await prisma.repo.update({
       where: { id },
       data: {
@@ -89,8 +219,15 @@ export class RepoService {
         ...(data.language !== undefined && { language: data.language }),
         ...(data.url && { url: data.url }),
         ...(data.aiDescription !== undefined && { aiDescription: data.aiDescription }),
-        ...(data.tags && { tags: data.tags }),
+        ...(data.topics !== undefined && { topics: data.topics }),
         ...(data.isDeleted !== undefined && { isDeleted: data.isDeleted })
+      },
+      include: {
+        repoAiTags: {
+          include: {
+            tag: true
+          }
+        }
       }
     })
   }
@@ -126,22 +263,14 @@ export class RepoService {
     })
   }
 
-  // 批量创建仓库
+  // 批量创建仓库（注意：createMany 不支持嵌套创建，需要单独处理关联）
   static async createMany(repos: CreateRepoData[]) {
-    return await prisma.repo.createMany({
-      data: repos.map(repo => ({
-        name: repo.name,
-        fullName: repo.fullName,
-        description: repo.description,
-        stars: repo.stars || 0,
-        forks: repo.forks || 0,
-        language: repo.language,
-        url: repo.url,
-        aiDescription: repo.aiDescription,
-        tags: repo.tags || [],
-        isDeleted: repo.isDeleted || false
-      })),
-      skipDuplicates: true
-    })
+    // 先创建仓库
+    const createdRepos = await Promise.all(
+      repos.map(async (repo) => {
+        return await this.create(repo)
+      })
+    )
+    return createdRepos
   }
 }

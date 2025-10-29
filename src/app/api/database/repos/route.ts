@@ -43,7 +43,8 @@ export async function GET(request: NextRequest) {
       description: repo.aiDescription || repo.description, // 优先使用AI生成的描述，如果没有则使用原始描述
       stargazers_count: repo.stars,
       language: repo.language,
-      topics: repo.tags || [],
+      topics: repo.topics || [], // 原始标签
+      aiTags: repo.repoAiTags?.map(repoAiTag => repoAiTag.tag.name) || [], // AI分析的标签（从关联表提取）
       html_url: repo.url,
       created_at: repo.createdAt.toISOString(),
       updated_at: repo.updatedAt.toISOString()

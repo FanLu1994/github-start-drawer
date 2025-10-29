@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { RepoCard } from "@/components/repo-card";
 import { GitHubConfigPrompt } from "@/components/github-config-prompt";
-import { Search, Github, Code, Database, Cpu, Globe, Smartphone, Zap, Shield, ChevronLeft, ChevronRight, Loader2, LucideIcon, CheckCircle, XCircle, Info, Shuffle } from "lucide-react";
+import { Search, Github, Code, Database, Cpu, Globe, Smartphone, Zap, Shield, ChevronLeft, ChevronRight, Loader2, LucideIcon, CheckCircle, XCircle, Info, Shuffle, RefreshCw } from "lucide-react";
 
 interface ConfigStatus {
   configured: boolean;
@@ -61,6 +61,15 @@ export default function Home() {
   } | null>(null);
   const [deletingRepos, setDeletingRepos] = useState<Set<string>>(new Set());
   const [reanalyzingRepos, setReanalyzingRepos] = useState<Set<string>>(new Set());
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<{
+    current: number;
+    total: number;
+    status: string;
+    synced: number;
+    skipped: number;
+    errors: number;
+  } | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const [toast, setToast] = useState<{
     show: boolean;
@@ -435,6 +444,72 @@ export default function Home() {
     }
   };
 
+  // 同步 GitHub Star 的仓库
+  const handleSync = async () => {
+    setIsSyncing(true);
+    setSyncProgress({ current: 0, total: 0, status: '正在启动同步...', synced: 0, skipped: 0, errors: 0 });
+    
+    try {
+      const response = await fetch('/api/github/sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || '启动同步失败');
+      }
+
+      // 开始轮询进度
+      const pollProgress = async () => {
+        try {
+          const progressResponse = await fetch('/api/github/sync');
+          if (progressResponse.ok) {
+            const state = await progressResponse.json();
+            setSyncProgress(state.progress);
+            
+            if (state.progress.status === 'completed') {
+              // 同步完成，刷新数据
+              await fetchRepos(currentPage);
+              setIsSyncing(false);
+              setSyncProgress(null);
+              
+              showToast(
+                'success', 
+                '同步完成', 
+                `已同步 ${state.progress.synced} 个仓库，跳过 ${state.progress.skipped} 个已存在的仓库`
+              );
+            } else if (state.progress.status === 'error') {
+              throw new Error(state.error || '同步失败');
+            } else if (state.isRunning) {
+              // 继续轮询
+              setTimeout(pollProgress, 1000);
+            } else {
+              setIsSyncing(false);
+              setSyncProgress(null);
+            }
+          }
+        } catch (error) {
+          console.error('获取同步进度失败:', error);
+          setIsSyncing(false);
+          setSyncProgress(null);
+          showToast('error', '同步失败', error instanceof Error ? error.message : '未知错误');
+        }
+      };
+
+      // 开始轮询
+      setTimeout(pollProgress, 1000);
+
+    } catch (error) {
+      console.error('同步失败:', error);
+      setIsSyncing(false);
+      setSyncProgress(null);
+      showToast('error', '同步失败', error instanceof Error ? error.message : '请重试');
+    }
+  };
+
   // 如果正在加载，显示加载状态
   if (isLoading) {
     return (
@@ -544,23 +619,43 @@ export default function Home() {
           <div className="mb-6">
             <div className="flex items-center justify-between mb-2">
               <h1 className="text-2xl font-bold text-foreground">GitHub Star Drawer</h1>
-              <Button 
-                onClick={startAnalysis} 
-                disabled={isAnalyzing}
-                className="bg-primary hover:bg-primary/90"
-              >
-                {isAnalyzing ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    分析中...
-                  </>
-                ) : (
-                  <>
-                    <Cpu className="w-4 h-4 mr-2" />
-                    开始分析
-                  </>
-                )}
-              </Button>
+              <div className="flex gap-2">
+                <Button 
+                  onClick={handleSync} 
+                  disabled={isSyncing}
+                  variant="outline"
+                  title="同步 GitHub Star 的仓库"
+                >
+                  {isSyncing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      同步中...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                      同步
+                    </>
+                  )}
+                </Button>
+                <Button 
+                  onClick={startAnalysis} 
+                  disabled={isAnalyzing}
+                  className="bg-primary hover:bg-primary/90"
+                >
+                  {isAnalyzing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      分析中...
+                    </>
+                  ) : (
+                    <>
+                      <Cpu className="w-4 h-4 mr-2" />
+                      开始分析
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
             <p className="text-foreground/80 mb-4">
               {repoSearchQuery 
@@ -609,7 +704,7 @@ export default function Home() {
                 重试
               </Button>
             </div>
-          ) : repos.length === 0 && !isAnalyzing ? (
+          ) : repos.length === 0 && !isAnalyzing && !isSyncing ? (
             <div className="text-center py-12">
               <div className="max-w-md mx-auto">
                 <Github className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
@@ -625,6 +720,37 @@ export default function Home() {
                   <Cpu className="w-4 h-4 mr-2" />
                   开始分析仓库
                 </Button>
+              </div>
+            </div>
+          ) : isSyncing ? (
+            <div className="text-center py-12">
+              <div className="max-w-md mx-auto">
+                <Loader2 className="w-16 h-16 mx-auto mb-4 text-primary animate-spin" />
+                <h3 className="text-lg font-semibold mb-2">正在同步仓库</h3>
+                {syncProgress && (
+                  <div className="space-y-2">
+                    <p className="text-muted-foreground">{syncProgress.status}</p>
+                    {syncProgress.total > 0 && (
+                      <>
+                        <div className="w-full bg-muted rounded-full h-2">
+                          <div 
+                            className="bg-primary h-2 rounded-full transition-all duration-300"
+                            style={{ 
+                              width: `${(syncProgress.current / syncProgress.total) * 100}%` 
+                            }}
+                          />
+                        </div>
+                        <div className="flex justify-between text-sm text-muted-foreground">
+                          <span>{syncProgress.current} / {syncProgress.total}</span>
+                          <span>
+                            已同步: {syncProgress.synced} | 跳过: {syncProgress.skipped}
+                            {syncProgress.errors > 0 && ` | 错误: ${syncProgress.errors}`}
+                          </span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           ) : isAnalyzing ? (

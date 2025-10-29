@@ -140,7 +140,7 @@ class Semaphore {
 // 使用信号量控制的分析函数
 async function analyzeRepoWithSemaphore(
   semaphore: Semaphore,
-  repo: { full_name: string; name: string; owner: { login: string }; description?: string | null; language?: string | null; stargazers_count: number; forks_count: number; html_url: string },
+  repo: { full_name: string; name: string; owner: { login: string }; description?: string | null; language?: string | null; stargazers_count: number; forks_count: number; html_url: string; topics?: string[] },
   githubClient: GitHubClient,
   analyzer: RepoAnalyzer
 ): Promise<void> {
@@ -160,8 +160,8 @@ async function analyzeRepoWithSemaphore(
       return;
     }
 
-    // 获取仓库详细信息（用于验证仓库存在性）
-    await githubClient.getRepo(repo.owner.login, repo.name);
+    // 获取仓库详细信息（用于验证仓库存在性并获取 topics）
+    const repoDetails = await githubClient.getRepo(repo.owner.login, repo.name);
     
     // 获取README内容（支持多种格式）
     let readmeContent = '';
@@ -273,7 +273,8 @@ async function analyzeRepoWithSemaphore(
         language: repo.language || undefined,
         url: repo.html_url,
         aiDescription: analysisResult.data.description,
-        tags: uniqueTags
+        topics: repoDetails.topics || repo.topics || [],
+        aiTags: uniqueTags
       });
 
       // 详细日志记录

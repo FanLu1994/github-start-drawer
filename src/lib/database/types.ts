@@ -10,7 +10,8 @@ export interface Repo {
   createdAt: Date
   updatedAt: Date
   aiDescription: string | null
-  tags: string[]
+  topics: string[]
+  aiTags: Tag[]
   isDeleted: boolean
 }
 
@@ -28,7 +29,8 @@ export interface CreateRepoData {
   language?: string
   url: string
   aiDescription?: string
-  tags?: string[]
+  topics?: string[]
+  aiTags?: string[] // 标签名称数组，用于创建关联
   isDeleted?: boolean
 }
 
@@ -41,6 +43,7 @@ export interface UpdateRepoData {
   language?: string
   url?: string
   aiDescription?: string
-  tags?: string[]
+  topics?: string[]
+  aiTags?: string[] // 标签名称数组，用于更新关联
   isDeleted?: boolean
 }
