@@ -34,7 +34,11 @@ export class GitHubClient {
     const token = this.configManager.getToken();
     
     if (!token) {
-      throw new Error('GitHub token is required. Please set GITHUB_TOKEN environment variable or provide config.');
+      const err = new Error('GITHUB_TOKEN_MISSING');
+      // 为路由层识别，附加一个标记属性
+      // @ts-expect-error augment error
+      err.code = 'GITHUB_TOKEN_MISSING';
+      throw err;
     }
 
     const url = `${this.baseURL}${endpoint}`;
@@ -55,7 +59,21 @@ export class GitHubClient {
           status: response.status
         }));
 
-        throw new Error(`GitHub API 错误: ${errorData.message}`);
+        if (response.status === 401) {
+          const err = new Error('GITHUB_TOKEN_INVALID');
+          // @ts-expect-error augment error
+          err.code = 'GITHUB_TOKEN_INVALID';
+          // @ts-expect-error augment error
+          err.details = errorData?.message;
+          throw err;
+        }
+
+        const err = new Error(`GitHub API 错误: ${errorData.message}`);
+        // @ts-expect-error augment error
+        err.code = 'GITHUB_API_ERROR';
+        // @ts-expect-error augment error
+        err.status = response.status;
+        throw err;
       }
 
       return await response.json();

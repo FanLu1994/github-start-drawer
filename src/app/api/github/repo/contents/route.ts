@@ -42,7 +42,17 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('获取 GitHub 仓库内容错误:', error);
-    
+    const code = (error as any)?.code;
+    if (code === 'GITHUB_TOKEN_MISSING' || code === 'GITHUB_TOKEN_INVALID') {
+      return NextResponse.json(
+        {
+          error: code === 'GITHUB_TOKEN_MISSING' ? 'GitHub Token 未配置' : 'GitHub Token 无效',
+          code,
+          details: (error as any)?.details || (error instanceof Error ? error.message : undefined)
+        },
+        { status: 401 }
+      );
+    }
     return NextResponse.json(
       { 
         error: '获取仓库内容失败',

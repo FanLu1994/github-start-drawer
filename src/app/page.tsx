@@ -44,6 +44,7 @@ export default function Home() {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [repoSearchQuery, setRepoSearchQuery] = useState<string>("");
+  const [activeSearchQuery, setActiveSearchQuery] = useState<string>("");
   const [githubConfig, setGithubConfig] = useState<ConfigStatus | null>(null);
   const [deepseekConfig, setDeepseekConfig] = useState<ConfigStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -196,10 +197,10 @@ export default function Home() {
   // 仓库搜索和分页独立处理
   useEffect(() => {
     if (isInitialized) {
-      // 只有在搜索条件或页码变化时才重新获取数据
-      fetchRepos(currentPage, repoSearchQuery);
+      // 只有在页码或激活的搜索条件变化时才重新获取数据
+      fetchRepos(currentPage, activeSearchQuery);
     }
-  }, [repoSearchQuery, currentPage, isInitialized]);
+  }, [activeSearchQuery, currentPage, isInitialized]);
 
   // 图标映射
   const getIconForLanguage = (language: string | null): LucideIcon => {
@@ -260,7 +261,7 @@ export default function Home() {
   // 搜索仓库
   const handleSearchRepos = () => {
     setCurrentPage(1);
-    fetchRepos(1, repoSearchQuery);
+    setActiveSearchQuery(repoSearchQuery);
   };
 
   // 开始分析仓库
@@ -458,6 +459,15 @@ export default function Home() {
       });
 
       if (!response.ok) {
+        if (response.status === 401) {
+          const errorBody = await response.json().catch(() => ({}));
+          const code = (errorBody && errorBody.code) || 'UNAUTHORIZED';
+          const details = errorBody && (errorBody.details || errorBody.error);
+          showToast('error', code === 'GITHUB_TOKEN_MISSING' ? 'GitHub Token 未配置' : 'GitHub Token 无效', details);
+          setIsSyncing(false);
+          setSyncProgress(null);
+          return;
+        }
         const error = await response.json();
         throw new Error(error.error || '启动同步失败');
       }
@@ -466,6 +476,15 @@ export default function Home() {
       const pollProgress = async () => {
         try {
           const progressResponse = await fetch('/api/github/sync');
+          if (progressResponse.status === 401) {
+            const errorBody = await progressResponse.json().catch(() => ({}));
+            const code = (errorBody && errorBody.code) || 'UNAUTHORIZED';
+            const details = errorBody && (errorBody.details || errorBody.error);
+            showToast('error', code === 'GITHUB_TOKEN_MISSING' ? 'GitHub Token 未配置' : 'GitHub Token 无效', details);
+            setIsSyncing(false);
+            setSyncProgress(null);
+            return;
+          }
           if (progressResponse.ok) {
             const state = await progressResponse.json();
             setSyncProgress(state.progress);
@@ -658,8 +677,8 @@ export default function Home() {
               </div>
             </div>
             <p className="text-foreground/80 mb-4">
-              {repoSearchQuery 
-                ? `搜索结果: "${repoSearchQuery}"`
+              {activeSearchQuery 
+                ? `搜索结果: "${activeSearchQuery}"`
                 : selectedTags.length === 0 
                   ? "显示所有仓库" 
                   : `显示包含标签: ${selectedTags.join(", ")} 的仓库`
@@ -700,7 +719,7 @@ export default function Home() {
           ) : reposError ? (
             <div className="text-center py-12">
               <p className="text-destructive mb-4">{reposError}</p>
-              <Button onClick={() => fetchRepos(currentPage, repoSearchQuery)} variant="outline">
+              <Button onClick={() => fetchRepos(currentPage, activeSearchQuery)} variant="outline">
                 重试
               </Button>
             </div>
@@ -788,7 +807,7 @@ export default function Home() {
                   const allRepoTags = [...repoLanguages, ...repoTopics];
                   
                   return (
-                    <div key={repo.id} className="w-full md:w-[calc(50%-12px)] lg:w-[calc(33.333%-16px)]">
+                    <div key={repo.id} className="w-full md:w-[calc(50%-12px)] lg:w-[calc(33.333%-16px)] min-w-[320px]">
                       <RepoCard
                         id={repo.id}
                         name={repo.name}

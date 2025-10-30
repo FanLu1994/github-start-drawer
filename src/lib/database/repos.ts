@@ -47,8 +47,8 @@ export class RepoService {
 
   // 根据ID获取仓库
   static async findById(id: string) {
-    return await prisma.repo.findUnique({
-      where: { 
+    return await prisma.repo.findFirst({
+      where: {
         id,
         isDeleted: false
       },

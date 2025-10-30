@@ -15,6 +15,7 @@ export interface SyncState {
   isRunning: boolean;
   progress: SyncProgress;
   error: string | null;
+  errorCode?: string;
 }
 
 class SyncStateManager {
@@ -28,7 +29,8 @@ class SyncStateManager {
       skipped: 0,
       errors: 0
     },
-    error: null
+    error: null,
+    errorCode: undefined
   };
 
   getState(): SyncState {
@@ -43,8 +45,9 @@ class SyncStateManager {
     this.state.progress = { ...this.state.progress, ...progress };
   }
 
-  setError(error: string | null): void {
+  setError(error: string | null, errorCode?: string): void {
     this.state.error = error;
+    this.state.errorCode = errorCode;
   }
 
   incrementSynced(): void {
@@ -73,7 +76,8 @@ class SyncStateManager {
         skipped: 0,
         errors: 0
       },
-      error: null
+      error: null,
+      errorCode: undefined
     };
   }
 }

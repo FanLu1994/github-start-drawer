@@ -43,3 +43,7 @@ UI 组件库：TailwindCSS + Shadcn/ui
 嵌入模型：OpenAI Embeddings / HuggingFace Sentence Transformers
 
 推荐算法：语义相似度 + 协同过滤
+
+
+UI
+基于shadcn开发

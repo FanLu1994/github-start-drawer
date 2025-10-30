@@ -19,12 +19,31 @@ export async function POST(request: NextRequest) {
     
     if (!githubClient.isConfigured()) {
       return NextResponse.json(
-        { error: 'GitHub 服务未配置' },
-        { status: 400 }
+        { error: 'GitHub 服务未配置', code: 'GITHUB_TOKEN_MISSING' },
+        { status: 401 }
       );
     }
 
-    // 启动同步（异步执行）
+    // 在启动异步任务前，先验证 Token 有效性（调用一个轻量接口测试）
+    try {
+      await githubClient.getMyStarredRepos({ per_page: 1, page: 1 });
+    } catch (error) {
+      const errorCode = (error as any)?.code;
+      if (errorCode === 'GITHUB_TOKEN_MISSING' || errorCode === 'GITHUB_TOKEN_INVALID') {
+        return NextResponse.json(
+          {
+            error: errorCode === 'GITHUB_TOKEN_MISSING' ? 'GitHub Token 未配置' : 'GitHub Token 无效',
+            code: errorCode,
+            details: (error as any)?.details || (error instanceof Error ? error.message : undefined)
+          },
+          { status: 401 }
+        );
+      }
+      // 其他错误继续抛出
+      throw error;
+    }
+
+    // Token 验证通过，启动同步（异步执行）
     startSyncProcess();
 
     return NextResponse.json({
@@ -138,7 +157,19 @@ async function startSyncProcess() {
 
   } catch (error) {
     console.error('同步过程出错:', error);
-    syncStateManager.setError(error instanceof Error ? error.message : '同步失败');
+    const errorCode = (error as any)?.code;
+    const errorDetails = (error as any)?.details || (error instanceof Error ? error.message : undefined);
+    
+    // 如果是 Token 错误，设置特殊标记
+    if (errorCode === 'GITHUB_TOKEN_MISSING' || errorCode === 'GITHUB_TOKEN_INVALID') {
+      syncStateManager.setError(JSON.stringify({
+        code: errorCode,
+        message: errorCode === 'GITHUB_TOKEN_MISSING' ? 'GitHub Token 未配置' : 'GitHub Token 无效',
+        details: errorDetails
+      }));
+    } else {
+      syncStateManager.setError(error instanceof Error ? error.message : '同步失败');
+    }
     syncStateManager.setProgress({ status: 'error' });
   } finally {
     syncStateManager.setRunning(false);
@@ -148,6 +179,26 @@ async function startSyncProcess() {
 // 获取同步进度
 export async function GET() {
   const state = syncStateManager.getState();
+  
+  // 如果有错误且是 Token 相关错误，返回 401
+  if (state.error) {
+    try {
+      const errorObj = JSON.parse(state.error);
+      if (errorObj.code === 'GITHUB_TOKEN_MISSING' || errorObj.code === 'GITHUB_TOKEN_INVALID') {
+        return NextResponse.json(
+          {
+            error: errorObj.message,
+            code: errorObj.code,
+            details: errorObj.details
+          },
+          { status: 401 }
+        );
+      }
+    } catch {
+      // 如果解析失败，说明不是 JSON 格式的错误，继续正常返回
+    }
+  }
+  
   return NextResponse.json({
     isRunning: state.isRunning,
     progress: state.progress,
