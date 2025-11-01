@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { GitHubClient } from '@/lib/github';
 import { RepoService } from '@/lib/database/repos';
 import { TagService } from '@/lib/database/tags';
+import { CustomTagService } from '@/lib/database/custom-tags';
 import { RepoAnalyzer } from '@/lib/ai';
-import { deduplicateAndNormalizeTags } from '@/lib/utils';
 
 export async function POST(request: NextRequest) {
   try {
@@ -139,6 +139,10 @@ export async function POST(request: NextRequest) {
       console.log(`无法获取 ${repo.fullName} 的文件结构:`, error);
     }
 
+    // 获取自定义标签
+    const customTags = await CustomTagService.findAll();
+    const customCategories = customTags.map(tag => tag.content);
+
     // AI分析
     const analysisResult = await analyzer.analyzeRepo({
       name: repoDetails.name,
@@ -149,12 +153,14 @@ export async function POST(request: NextRequest) {
       forks: repoDetails.forks_count,
       url: repoDetails.html_url,
       readmeContent,
-      fileStructure
+      fileStructure,
+      topics: repoDetails.topics || [],
+      customCategories
     });
 
     if (analysisResult.success && analysisResult.data) {
-      // 使用工具函数进行标签去重和标准化
-      const uniqueTags = deduplicateAndNormalizeTags(analysisResult.data.tags);
+      // 标签去重
+      const uniqueTags = [...new Set(analysisResult.data.tags)];
 
       // 将标签保存到 tags 表
       if (uniqueTags.length > 0) {
@@ -167,7 +173,7 @@ export async function POST(request: NextRequest) {
         stars: repoDetails.stargazers_count,
         forks: repoDetails.forks_count,
         language: repoDetails.language || undefined,
-        aiDescription: analysisResult.data.description,
+        aiDescription: analysisResult.data.summary,
         topics: repoDetails.topics || [],
         aiTags: uniqueTags
       });
@@ -179,7 +185,7 @@ export async function POST(request: NextRequest) {
           name: repo.name,
           fullName: repo.fullName,
           topics: repoDetails.topics || [],
-          aiTags: uniqueTags
+          tags: uniqueTags
         }
       });
 

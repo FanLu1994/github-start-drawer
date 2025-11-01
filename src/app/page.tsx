@@ -5,9 +5,11 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import { Switch } from "@/components/ui/switch";
 import { RepoCard } from "@/components/repo-card";
 import { GitHubConfigPrompt } from "@/components/github-config-prompt";
-import { Search, Github, Code, Database, Cpu, Globe, Smartphone, Zap, Shield, ChevronLeft, ChevronRight, Loader2, LucideIcon, CheckCircle, XCircle, Info, Shuffle, RefreshCw } from "lucide-react";
+import { CustomTagManager } from "@/components/custom-tag-manager";
+import { Search, Github, Code, Database, Cpu, Globe, Smartphone, Zap, Shield, ChevronLeft, ChevronRight, Loader2, LucideIcon, CheckCircle, XCircle, Info, RefreshCw, Settings, Square, Check } from "lucide-react";
 
 interface ConfigStatus {
   configured: boolean;
@@ -21,9 +23,11 @@ interface GitHubRepo {
   name: string;
   full_name: string;
   description: string | null;
+  aiDescription: string | null;
   stargazers_count: number;
   language: string | null;
   topics: string[];
+  aiTags: string[];
   html_url: string;
   created_at: string;
   updated_at: string;
@@ -40,16 +44,28 @@ interface ReposResponse {
   total: number;
 }
 
+interface CustomTagWithCount {
+  id: string;
+  content: string;
+  count: number;
+}
+
+interface RepoStats {
+  totalRepos: number;
+  analyzedRepos: number;
+  unanalyzedRepos: number;
+}
+
 export default function Home() {
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [repoSearchQuery, setRepoSearchQuery] = useState<string>("");
   const [activeSearchQuery, setActiveSearchQuery] = useState<string>("");
   const [githubConfig, setGithubConfig] = useState<ConfigStatus | null>(null);
   const [deepseekConfig, setDeepseekConfig] = useState<ConfigStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [repos, setRepos] = useState<GitHubRepo[]>([]);
-  const [allTags, setAllTags] = useState<string[]>([]);
+  const [allTags, setAllTags] = useState<CustomTagWithCount[]>([]);
+  const [repoStats, setRepoStats] = useState<RepoStats | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [pagination, setPagination] = useState<ReposResponse['pagination'] | null>(null);
   const [reposLoading, setReposLoading] = useState(false);
@@ -72,6 +88,8 @@ export default function Home() {
     errors: number;
   } | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [customTagManagerOpen, setCustomTagManagerOpen] = useState(false);
+  const [showAIAnalysis, setShowAIAnalysis] = useState(true); // false: 显示原始GitHub信息, true: 显示AI分析信息
   const [toast, setToast] = useState<{
     show: boolean;
     type: 'success' | 'error' | 'info';
@@ -129,7 +147,7 @@ export default function Home() {
   }, []);
 
   // 获取仓库数据
-  const fetchRepos = async (page: number = 1, search: string = '') => {
+  const fetchRepos = async (page: number = 1, search: string = '', tag: string | null = null) => {
     setReposLoading(true);
     setReposError(null);
     
@@ -139,6 +157,9 @@ export default function Home() {
       params.append('per_page', '12');
       if (search) {
         params.append('search', search);
+      }
+      if (tag) {
+        params.append('tags', tag);
       }
       
       const response = await fetch(`/api/database/repos?${params.toString()}`);
@@ -158,35 +179,42 @@ export default function Home() {
     }
   };
 
-  // 获取标签数据
-  const fetchTags = async (random: boolean = false, search: string = '') => {
+  // 获取自定义标签及其关联的仓库数量
+  const fetchTags = async () => {
     try {
-      const params = new URLSearchParams();
-      if (random) {
-        params.append('random', 'true');
-        params.append('limit', '20');
-      }
-      if (search) {
-        params.append('search', search);
-      }
-      
-      const response = await fetch(`/api/database/tags?${params.toString()}`);
+      const response = await fetch('/api/database/custom-tags/stats');
       if (!response.ok) {
         throw new Error('获取标签数据失败');
       }
       
       const data = await response.json();
-      setAllTags(data.tags);
+      setAllTags(data.tags || []);
     } catch (error) {
       console.error('获取标签失败:', error);
+    }
+  };
+
+  // 获取统计信息
+  const fetchStats = async () => {
+    try {
+      const response = await fetch('/api/database/stats');
+      if (!response.ok) {
+        throw new Error('获取统计信息失败');
+      }
+      
+      const data = await response.json();
+      setRepoStats(data);
+    } catch (error) {
+      console.error('获取统计信息失败:', error);
     }
   };
 
   // 当配置检查完成后，初始化加载数据
   useEffect(() => {
     if (githubConfig?.configured && deepseekConfig?.configured && !isInitialized) {
-      fetchRepos(1, ''); // 初始化时加载第一页，无搜索条件
-      fetchTags(true); // 默认加载随机标签
+      fetchRepos(1, '', null); // 初始化时加载第一页，无搜索条件，无标签筛选
+      fetchTags(); // 加载自定义标签
+      fetchStats(); // 加载统计信息
       setIsInitialized(true);
     }
   }, [githubConfig?.configured, deepseekConfig?.configured, isInitialized]);
@@ -197,10 +225,10 @@ export default function Home() {
   // 仓库搜索和分页独立处理
   useEffect(() => {
     if (isInitialized) {
-      // 只有在页码或激活的搜索条件变化时才重新获取数据
-      fetchRepos(currentPage, activeSearchQuery);
+      // 只有在页码、激活的搜索条件或选中的标签变化时才重新获取数据
+      fetchRepos(currentPage, activeSearchQuery, selectedTag);
     }
-  }, [activeSearchQuery, currentPage, isInitialized]);
+  }, [activeSearchQuery, currentPage, selectedTag, isInitialized]);
 
   // 图标映射
   const getIconForLanguage = (language: string | null): LucideIcon => {
@@ -220,48 +248,55 @@ export default function Home() {
     return iconMap[language || ''] || iconMap.default;
   };
 
-  // 筛选逻辑
-  const filteredRepos = selectedTags.length === 0 
-    ? repos 
-    : repos.filter(repo => {
-        const repoLanguages = repo.language ? [repo.language] : [];
-        const repoTopics = repo.topics || [];
-        const allRepoTags = [...repoLanguages, ...repoTopics];
-        return selectedTags.some(tag => allRepoTags.includes(tag));
-      });
-
-  const toggleTag = (tag: string) => {
-    setSelectedTags(prev => 
-      prev.includes(tag) 
-        ? prev.filter(t => t !== tag)
-        : [...prev, tag]
-    );
+  // 标签选择逻辑（单选）
+  const selectTag = (tag: string) => {
+    if (selectedTag === tag) {
+      // 如果点击的是已选中的标签，则取消选择
+      setSelectedTag(null);
+      setCurrentPage(1);
+      fetchRepos(1, activeSearchQuery, null);
+    } else {
+      // 选择新标签
+      setSelectedTag(tag);
+      setCurrentPage(1);
+      fetchRepos(1, activeSearchQuery, tag);
+    }
   };
 
   const handlePageChange = (newPage: number) => {
     setCurrentPage(newPage);
-    setSelectedTags([]); // 切换页面时清空选中的标签
+    fetchRepos(newPage, activeSearchQuery, selectedTag);
   };
 
-  // 随机获取标签
-  const handleRandomTags = () => {
-    fetchTags(true);
-  };
-
-  // 搜索标签
-  const handleSearchTags = () => {
-    if (searchQuery.trim()) {
-      fetchTags(false, searchQuery);
-    } else {
-      // 如果搜索框为空，加载随机标签
-      fetchTags(true);
-    }
-  };
 
   // 搜索仓库
   const handleSearchRepos = () => {
     setCurrentPage(1);
     setActiveSearchQuery(repoSearchQuery);
+    // 搜索时会自动触发 useEffect，这里不需要手动调用
+  };
+
+  // 停止分析
+  const stopAnalysis = async () => {
+    try {
+      const response = await fetch('/api/analysis/stop', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('停止分析失败');
+      }
+
+      setIsAnalyzing(false);
+      setAnalysisProgress(null);
+      showToast('info', '分析已停止', '已停止当前分析任务');
+    } catch (error) {
+      console.error('停止分析失败:', error);
+      showToast('error', '停止失败', error instanceof Error ? error.message : '请重试');
+    }
   };
 
   // 开始分析仓库
@@ -291,10 +326,16 @@ export default function Home() {
             
             if (state.progress.status === 'completed') {
               // 分析完成，刷新数据
-              await fetchRepos(currentPage, repoSearchQuery);
-              await fetchTags(true); // 重新加载随机标签
+              await fetchRepos(currentPage, activeSearchQuery, selectedTag);
+              await fetchTags(); // 重新加载自定义标签
+              await fetchStats(); // 刷新统计信息
               setIsAnalyzing(false);
               setAnalysisProgress(null);
+            } else if (state.progress.status === '已停止') {
+              // 分析已停止
+              setIsAnalyzing(false);
+              setAnalysisProgress(null);
+              showToast('info', '分析已停止', '您可以随时重新开始分析');
             } else if (state.progress.status === 'error') {
               throw new Error(state.error || '分析失败');
             } else {
@@ -333,6 +374,7 @@ export default function Home() {
       if (response.ok) {
         // 从本地状态中移除仓库
         setRepos(prev => prev.filter(repo => repo.id !== id));
+        await fetchStats(); // 刷新统计信息
         console.log(`仓库 ${fullName} 已删除`);
         showToast('success', '删除成功', `仓库 ${fullName} 已删除`);
       } else {
@@ -424,8 +466,9 @@ export default function Home() {
         console.log(`仓库 ${fullName} 重新分析完成:`, result);
         
         // 刷新数据
-        await fetchRepos(currentPage);
+        await fetchRepos(currentPage, activeSearchQuery, selectedTag);
         await fetchTags();
+        await fetchStats(); // 刷新统计信息
         
         showToast('success', '重新分析完成', `新标签: ${result.repo.tags.join(', ')}`);
       } else {
@@ -491,7 +534,8 @@ export default function Home() {
             
             if (state.progress.status === 'completed') {
               // 同步完成，刷新数据
-              await fetchRepos(currentPage);
+              await fetchRepos(currentPage, activeSearchQuery, selectedTag);
+              await fetchStats(); // 刷新统计信息
               setIsSyncing(false);
               setSyncProgress(null);
               
@@ -551,86 +595,74 @@ export default function Home() {
       <div className="flex h-screen relative z-10">
         {/* 左侧 Sidebar */}
         <div className="w-80 bg-card/30 border-r border-border p-6 overflow-y-auto backdrop-blur-md">
-          <h2 className="text-xl font-bold text-card-foreground mb-4">Repo 标签</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-card-foreground">Repo 标签</h2>
+            <Button
+              onClick={() => setCustomTagManagerOpen(true)}
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0"
+              title="管理自定义标签"
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
+          </div>
           
-          {/* 标签搜索器 */}
-          <div className="mb-6">
-            <div className="relative mb-2">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                type="text"
-                placeholder="搜索标签..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter') {
-                    handleSearchTags();
-                  }
-                }}
-              />
+          {/* 统计信息 */}
+          <div className="mb-6 space-y-3">
+            <div className="rounded-lg border bg-card/50 p-4 backdrop-blur-sm">
+              <div className="text-sm text-muted-foreground mb-1">仓库总数</div>
+              <div className="text-2xl font-bold text-card-foreground">
+                {repoStats?.totalRepos ?? '-'}
+              </div>
             </div>
-            <div className="flex gap-2">
-              <Button 
-                onClick={handleSearchTags}
-                variant="outline" 
-                size="sm"
-                className="flex-1"
-              >
-                搜索标签
-              </Button>
-              <Button 
-                onClick={handleRandomTags}
-                variant="outline" 
-                size="sm"
-                className="flex-1"
-              >
-                <Shuffle className="h-4 w-4 mr-1" />
-                随机
-              </Button>
+            <div className="rounded-lg border bg-card/50 p-4 backdrop-blur-sm">
+              <div className="text-sm text-muted-foreground mb-1">已分析仓库</div>
+              <div className="text-2xl font-bold text-primary">
+                {repoStats?.analyzedRepos ?? '-'}
+              </div>
+              {repoStats && repoStats.totalRepos > 0 && (
+                <div className="text-xs text-muted-foreground mt-1">
+                  {Math.round((repoStats.analyzedRepos / repoStats.totalRepos) * 100)}% 完成
+                </div>
+              )}
             </div>
           </div>
 
           <div className="space-y-2">
             {allTags.length > 0 ? (
-              allTags.map((tag) => (
-                <Button
-                  key={tag}
-                  onClick={() => toggleTag(tag)}
-                  variant="outline"
-                  className={`w-full justify-start transition-all duration-200 ${
-                    selectedTags.includes(tag) 
-                      ? "bg-primary/30 border-primary/50 text-primary-foreground shadow-lg backdrop-blur-sm" 
-                      : "bg-card/20 border-border text-card-foreground hover:bg-primary/20 hover:border-primary/30 backdrop-blur-sm"
-                  }`}
-                >
-                  {tag}
-                </Button>
-              ))
+              allTags.map((tag) => {
+                const isActive = selectedTag === tag.content;
+                return (
+                  <Button
+                    key={tag.id}
+                    onClick={() => selectTag(tag.content)}
+                    variant="outline"
+                    className={`w-full justify-between items-center rounded-lg transition-all duration-200 ${
+                      isActive
+                        ? "bg-primary/25 border-primary/60 text-card-foreground shadow-lg ring-2 ring-primary/40"
+                        : "bg-card/20 border-border text-card-foreground hover:bg-primary/15 hover:border-primary/30 backdrop-blur-sm"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      {isActive && <Check className="h-4 w-4" />}
+                      <span className="truncate">{tag.content}</span>
+                    </div>
+                    <Badge
+                      variant="secondary"
+                      className={`ml-2 ${isActive ? "bg-primary/80 text-primary-foreground" : ""}`}
+                    >
+                      {tag.count}
+                    </Badge>
+                  </Button>
+                );
+              })
             ) : (
               <div className="text-center py-4 text-muted-foreground">
-                <p>没有找到匹配的标签</p>
+                <p>暂无自定义标签</p>
               </div>
             )}
           </div>
-          
-          {selectedTags.length > 0 && (
-            <div className="mt-6">
-              <h3 className="text-sm font-medium text-card-foreground/80 mb-2">已选择标签:</h3>
-              <div className="flex flex-wrap gap-2">
-                {selectedTags.map((tag) => (
-                  <Badge
-                    key={tag}
-                    variant="outline"
-                    className="cursor-pointer bg-primary/20 border-primary/40 text-primary-foreground hover:bg-destructive/30 hover:border-destructive/50 transition-all duration-200 backdrop-blur-sm"
-                    onClick={() => toggleTag(tag)}
-                  >
-                    {tag} ×
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* 右侧主内容区 */}
@@ -657,33 +689,48 @@ export default function Home() {
                     </>
                   )}
                 </Button>
-                <Button 
-                  onClick={startAnalysis} 
-                  disabled={isAnalyzing}
-                  className="bg-primary hover:bg-primary/90"
-                >
-                  {isAnalyzing ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      分析中...
-                    </>
-                  ) : (
-                    <>
-                      <Cpu className="w-4 h-4 mr-2" />
-                      开始分析
-                    </>
-                  )}
-                </Button>
+                {isAnalyzing ? (
+                  <Button 
+                    onClick={stopAnalysis}
+                    variant="destructive"
+                    className="bg-destructive hover:bg-destructive/90"
+                  >
+                    <Square className="w-4 h-4 mr-2" />
+                    停止分析
+                  </Button>
+                ) : (
+                  <Button 
+                    onClick={startAnalysis}
+                    className="bg-primary hover:bg-primary/90"
+                  >
+                    <Cpu className="w-4 h-4 mr-2" />
+                    开始分析
+                  </Button>
+                )}
               </div>
             </div>
-            <p className="text-foreground/80 mb-4">
-              {activeSearchQuery 
-                ? `搜索结果: "${activeSearchQuery}"`
-                : selectedTags.length === 0 
-                  ? "显示所有仓库" 
-                  : `显示包含标签: ${selectedTags.join(", ")} 的仓库`
-              }
-            </p>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-foreground/80">
+                {activeSearchQuery 
+                  ? `搜索结果: "${activeSearchQuery}"`
+                  : selectedTag 
+                    ? `显示标签 "${selectedTag}" 的仓库`
+                    : "显示所有仓库"
+                }
+              </p>
+              <div className="flex items-center gap-2">
+                <label htmlFor="ai-analysis-switch" className="text-sm text-foreground/80 cursor-pointer">
+                  显示AI分析
+                </label>
+                <Switch
+                  id="ai-analysis-switch"
+                  checked={showAIAnalysis}
+                  onCheckedChange={(checked) => {
+                    setShowAIAnalysis(checked);
+                  }}
+                />
+              </div>
+            </div>
             
             {/* 仓库搜索框 */}
             <div className="flex gap-2 mb-4">
@@ -719,7 +766,7 @@ export default function Home() {
           ) : reposError ? (
             <div className="text-center py-12">
               <p className="text-destructive mb-4">{reposError}</p>
-              <Button onClick={() => fetchRepos(currentPage, activeSearchQuery)} variant="outline">
+              <Button onClick={() => fetchRepos(currentPage, activeSearchQuery, selectedTag)} variant="outline">
                 重试
               </Button>
             </div>
@@ -800,20 +847,32 @@ export default function Home() {
           ) : (
             <>
               <div className="flex flex-wrap gap-6">
-                {filteredRepos.map((repo) => {
+                {repos.map((repo) => {
                   const IconComponent = getIconForLanguage(repo.language);
-                  const repoLanguages = repo.language ? [repo.language] : [];
-                  const repoTopics = repo.topics || [];
-                  const allRepoTags = [...repoLanguages, ...repoTopics];
+                  
+                  // 根据开关状态选择显示的内容
+                  let displayDescription: string;
+                  let displayTags: string[];
+                  
+                  if (showAIAnalysis) {
+                    // 显示 AI 分析信息，如果没有则显示为空
+                    displayDescription = repo.aiDescription || '';
+                    displayTags = repo.aiTags && repo.aiTags.length > 0 ? repo.aiTags : [];
+                  } else {
+                    // 显示原始 GitHub 信息
+                    displayDescription = repo.description || '暂无描述';
+                    const repoLanguages = repo.language ? [repo.language] : [];
+                    displayTags = [...repoLanguages, ...(repo.topics || [])];
+                  }
                   
                   return (
                     <div key={repo.id} className="w-full md:w-[calc(50%-12px)] lg:w-[calc(33.333%-16px)] min-w-[320px]">
                       <RepoCard
                         id={repo.id}
                         name={repo.name}
-                        description={repo.description || '暂无描述'}
+                        description={displayDescription}
                         stars={repo.stargazers_count}
-                        tags={allRepoTags}
+                        tags={displayTags}
                         icon={IconComponent}
                         url={repo.html_url}
                         fullName={repo.full_name}
@@ -826,9 +885,11 @@ export default function Home() {
                 })}
               </div>
 
-              {filteredRepos.length === 0 && repos.length > 0 && (
+              {repos.length === 0 && (
                 <div className="text-center py-12">
-                  <p className="text-foreground/70">没有找到匹配的仓库</p>
+                  <p className="text-foreground/70">
+                    {selectedTag ? `没有找到包含标签 "${selectedTag}" 的仓库` : '没有仓库数据'}
+                  </p>
                 </div>
               )}
 
@@ -879,6 +940,16 @@ export default function Home() {
           </Alert>
         </div>
       )}
+
+      {/* 自定义标签管理弹窗 */}
+      <CustomTagManager
+        open={customTagManagerOpen}
+        onOpenChange={setCustomTagManagerOpen}
+        onTagsChange={() => {
+          // 标签变化时重新加载标签列表
+          fetchTags();
+        }}
+      />
     </div>
   );
 }

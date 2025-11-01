@@ -51,139 +51,66 @@ export class RepoAnalyzer {
    * 构建系统提示词
    */
   private buildSystemPrompt(): string {
-    return `你是一个专业的代码仓库分析专家。你的任务是根据提供的仓库信息，生成准确的描述和标签。
+    return `你是一个专业的代码仓库分析专家。你的任务是分析GitHub仓库并提供准确的中文概述和应用分类标签。
 
-**重要：你必须使用中文进行所有分析和输出，包括描述、标签和推理过程。**
+**重要：请严格使用中文进行分析和回复，无论原始README是什么语言。**
 
-请按照以下要求进行分析：
+请以JSON格式回复：
+{
+  "summary": "你的中文概述",
+  "tags": ["标签1", "标签2", "标签3", "标签4", "标签5"]
+}
 
-1. **描述生成**：
-   - 基于仓库名称、描述、语言、文件结构等信息
-   - 生成简洁、准确的中文描述（50-200字）
-   - 突出仓库的主要功能和特点
-   - **必须使用中文，不能使用英文**
-   - **当没有README时，重点分析文件结构和配置文件**
+**要求**：
+1. summary: 一个简洁的中文概述（不超过50字），说明这个仓库的主要功能和用途
+2. tags: 3-5个相关的应用类型标签（用中文，类似应用商店的分类，如：开发工具、Web应用、移动应用、数据库、AI工具等）
 
-2. **标签分类**：
-   - **语言标签**：识别主要编程语言（如 JavaScript, TypeScript, Python, Java, Go, Rust 等）
-   - **框架标签**：识别使用的框架和库（如 React, Vue, Express, Django, Next.js, Nuxt.js 等）
-   - **功能标签**：识别主要功能（如 Web应用, API, 工具库, 学习项目, 性能测试, 自动化工具 等）
-   - **技术标签**：识别具体技术（如 AI, 机器学习, 深度学习, 区块链, 微服务, 容器化 等）
-   - **工具标签**：识别开发工具和平台（如 MCP, Docker, Kubernetes, CI/CD, 测试工具, 监控工具 等）
-   - **领域标签**：识别应用领域（如 游戏开发, 数据分析, 图像处理, 自然语言处理, 推荐系统 等）
-   - **分类标签**：识别项目类型（如 前端, 后端, 全栈, 移动端, 桌面应用, 命令行工具 等）
-   - **所有标签必须使用中文，要具体、有意义，不要过于宽泛**
+**标签选择规则**：
+- 如果用户提供了自定义分类列表，请优先从中选择合适的标签
+- 如果自定义分类不适用，可以自行创建合适的中文标签
+- 标签要准确反映仓库的实用性和分类
 
-3. **无README时的特殊处理**：
-   - 重点分析文件结构中的配置文件（package.json, requirements.txt, pom.xml, Cargo.toml等）
-   - 通过目录结构推断项目架构（src/, lib/, app/, components/等）
-   - 通过测试文件推断项目质量（test/, tests/, __tests__/等）
-   - 通过构建文件推断部署方式（Dockerfile, docker-compose.yml, .github/workflows/等）
-   - 通过文档目录推断项目完整性（docs/, documentation/等）
-
-4. **输出格式**：
-   请严格按照以下JSON格式输出，不要包含任何其他内容：
-   {
-     "description": "仓库的中文描述（必须使用中文，50-200字）",
-     "tags": {
-       "languages": ["语言1", "语言2"],
-       "frameworks": ["框架1", "框架2"],
-       "features": ["功能1", "功能2"],
-       "technologies": ["技术1", "技术2"],
-       "tools": ["工具1", "工具2"],
-       "domains": ["领域1", "领域2"],
-       "categories": ["分类1", "分类2"]
-     },
-     "confidence": 0.85,
-     "reasoning": "分析推理过程（必须使用中文）"
-   }
-
-**严格要求**：
-- 所有输出必须使用中文，包括描述、标签和推理过程
-- confidence 范围 0-1，表示分析结果的置信度
-- 标签要准确、简洁，避免重复，必须使用中文
-- 如果信息不足，请在 reasoning 中说明（使用中文）
-- 不要使用任何英文单词或短语
-- 当没有README时，confidence可以适当降低，但要在reasoning中说明原因`;
+重点关注实用性和准确的分类，帮助用户快速理解仓库的用途。`;
   }
 
   /**
    * 构建用户提示词
    */
   private buildUserPrompt(repoData: RepoAnalysisRequest): string {
-    let prompt = `请分析以下代码仓库信息，**必须使用中文进行所有输出**：
+    // 1. 仓库信息标准化
+    const repoInfo = `
+仓库名称: ${repoData.fullName}
+描述: ${repoData.description || '无'}
+编程语言: ${repoData.language || '无'}
+Star数: ${repoData.stars || 0}
+主题标签: ${repoData.topics?.join(', ') || '无'}
 
-**基本信息**：
-- 仓库名称：${repoData.name}
-- 完整名称：${repoData.fullName}
-- 仓库URL：${repoData.url}`;
+README内容 (前2000字符):
+${repoData.readmeContent ? repoData.readmeContent.substring(0, 2000) : '无README内容'}
+    `;
 
-    if (repoData.description) {
-      prompt += `\n- 原始描述：${repoData.description}`;
-    }
+    // 2. 智能分类信息
+    const categoriesInfo = repoData.customCategories && repoData.customCategories.length > 0
+      ? `\n\n可用的应用分类: ${repoData.customCategories.join(', ')}`
+      : '';
 
-    if (repoData.language) {
-      prompt += `\n- 主要语言：${repoData.language}`;
-    }
+    const prompt = `请分析这个GitHub仓库并提供：
 
-    if (repoData.stars !== undefined) {
-      prompt += `\n- Star数：${repoData.stars}`;
-    }
+1. 一个简洁的中文概述（不超过50字），说明这个仓库的主要功能和用途
+2. 3-5个相关的应用类型标签（用中文，类似应用商店的分类，如：开发工具、Web应用、移动应用、数据库、AI工具等，请优先从提供的分类中选择）
 
-    if (repoData.forks !== undefined) {
-      prompt += `\n- Fork数：${repoData.forks}`;
-    }
+重要：请严格使用中文进行分析和回复，无论原始README是什么语言。
 
-    // 处理 README 内容
-    if (repoData.readmeContent) {
-      prompt += `\n\n**README内容**：\n${repoData.readmeContent}`;
-    } else {
-      prompt += `\n\n**注意**：此仓库没有 README 文件，请主要基于仓库名称、描述、语言和文件结构进行分析。`;
-    }
+请以JSON格式回复：
+{
+  "summary": "你的中文概述",
+  "tags": ["标签1", "标签2", "标签3", "标签4", "标签5"]
+}
 
-    if (repoData.fileStructure && repoData.fileStructure.length > 0) {
-      prompt += `\n\n**文件结构**：\n${repoData.fileStructure.join('\n')}`;
-      
-      // 如果没有 README，提供额外的文件结构分析指导
-      if (!repoData.readmeContent) {
-        prompt += `\n\n**文件结构分析指导**（无README时使用）：
-- 查看配置文件（package.json, requirements.txt, pom.xml, Cargo.toml 等）推断项目类型和依赖
-- 查看源代码目录结构推断架构模式（src/, lib/, app/, components/等）
-- 查看测试文件推断项目质量（test/, tests/, __tests__/等）
-- 查看文档目录推断项目完整性（docs/, documentation/等）
-- 查看构建文件推断部署方式（Dockerfile, docker-compose.yml, .github/workflows/等）
-- 查看配置文件推断技术栈（tsconfig.json, webpack.config.js, vite.config.js等）
-- 查看许可证和贡献指南推断项目开放程度`;
-        
-        // 分析文件结构中的关键信息
-        const configFiles = repoData.fileStructure.filter(file => 
-          /\.(json|toml|yml|yaml|txt|xml)$/i.test(file) && 
-          !/\.(md|txt)$/i.test(file)
-        );
-        
-        const testFiles = repoData.fileStructure.filter(file => 
-          /test|spec|__tests__/i.test(file)
-        );
-        
-        const docFiles = repoData.fileStructure.filter(file => 
-          /docs?|documentation|wiki/i.test(file)
-        );
-        
-        if (configFiles.length > 0) {
-          prompt += `\n\n**发现的配置文件**：${configFiles.slice(0, 5).join(', ')}`;
-        }
-        
-        if (testFiles.length > 0) {
-          prompt += `\n**发现的测试文件**：${testFiles.slice(0, 3).join(', ')}`;
-        }
-        
-        if (docFiles.length > 0) {
-          prompt += `\n**发现的文档文件**：${docFiles.slice(0, 3).join(', ')}`;
-        }
-      }
-    }
+仓库信息：
+${repoInfo}${categoriesInfo}
 
-    prompt += `\n\n请根据以上信息生成准确的描述和标签。**重要：所有输出必须使用中文，包括描述、标签和推理过程。**`;
+重点关注实用性和准确的分类，帮助用户快速理解仓库的用途。`;
 
     return prompt;
   }
@@ -203,26 +130,13 @@ export class RepoAnalyzer {
       const parsed = JSON.parse(jsonStr);
 
       // 验证必要字段
-      if (!parsed.description || !parsed.tags) {
+      if (!parsed.summary || !parsed.tags) {
         throw new Error('响应缺少必要字段');
       }
 
-      // 确保tags对象包含所有必要字段
-      const tags = {
-        languages: parsed.tags.languages || [],
-        frameworks: parsed.tags.frameworks || [],
-        features: parsed.tags.features || [],
-        technologies: parsed.tags.technologies || [],
-        tools: parsed.tags.tools || [],
-        domains: parsed.tags.domains || [],
-        categories: parsed.tags.categories || []
-      };
-
       return {
-        description: parsed.description,
-        tags,
-        confidence: Math.max(0, Math.min(1, parsed.confidence || 0.5)),
-        reasoning: parsed.reasoning || '基于提供的信息进行分析'
+        summary: parsed.summary,
+        tags: Array.isArray(parsed.tags) ? parsed.tags : []
       };
 
     } catch (error) {
@@ -230,18 +144,8 @@ export class RepoAnalyzer {
       
       // 返回默认结果
       return {
-        description: '基于仓库信息生成的中文描述',
-        tags: {
-          languages: [],
-          frameworks: [],
-          features: [],
-          technologies: [],
-          tools: [],
-          domains: [],
-          categories: []
-        },
-        confidence: 0.3,
-        reasoning: '解析失败，返回默认结果'
+        summary: '基于仓库信息生成的中文概述',
+        tags: []
       };
     }
   }

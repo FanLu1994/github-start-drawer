@@ -13,6 +13,7 @@ export interface AnalysisProgress {
 
 export interface AnalysisState {
   isRunning: boolean;
+  isStopped: boolean;
   progress: AnalysisProgress;
   error: string | null;
 }
@@ -20,6 +21,7 @@ export interface AnalysisState {
 class AnalysisStateManager {
   private state: AnalysisState = {
     isRunning: false,
+    isStopped: false,
     progress: {
       current: 0,
       total: 0,
@@ -50,6 +52,7 @@ class AnalysisStateManager {
   reset(): void {
     this.state = {
       isRunning: false,
+      isStopped: false,
       progress: {
         current: 0,
         total: 0,
@@ -60,6 +63,16 @@ class AnalysisStateManager {
       },
       error: null
     };
+  }
+
+  stop(): void {
+    this.state.isStopped = true;
+    this.state.isRunning = false;
+    this.state.progress.status = '已停止';
+  }
+
+  isStopped(): boolean {
+    return this.state.isStopped;
   }
 
   // 添加并行任务管理方法

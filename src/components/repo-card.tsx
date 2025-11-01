@@ -105,7 +105,7 @@ export function RepoCard({
             <button
               type="button"
               onClick={handleReanalyze}
-              className="rounded-full bg-blue-400/15 p-2 text-blue-200/80 transition-colors hover:bg-blue-400/25 hover:text-blue-100"
+              className="cursor-pointer rounded-full bg-blue-400/15 p-2 text-blue-200/80 transition-colors hover:bg-blue-400/25 hover:text-blue-100"
               title="重新分析"
             >
               <RefreshCw className="h-4 w-4" />
@@ -113,7 +113,7 @@ export function RepoCard({
             <button
               type="button"
               onClick={handleUnstar}
-              className="rounded-full bg-amber-400/15 p-2 text-amber-200/80 transition-colors hover:bg-amber-400/25 hover:text-amber-100"
+              className="cursor-pointer rounded-full bg-amber-400/15 p-2 text-amber-200/80 transition-colors hover:bg-amber-400/25 hover:text-amber-100"
               title="取消星标"
             >
               <Star className="h-4 w-4" />
@@ -121,7 +121,7 @@ export function RepoCard({
             <button
               type="button"
               onClick={handleDelete}
-              className="rounded-full bg-red-400/15 p-2 text-red-200/80 transition-colors hover:bg-red-400/25 hover:text-red-100"
+              className="cursor-pointer rounded-full bg-red-400/15 p-2 text-red-200/80 transition-colors hover:bg-red-400/25 hover:text-red-100"
               title="删除仓库"
             >
               <Trash2 className="h-4 w-4" />
@@ -154,7 +154,7 @@ export function RepoCard({
             <button
               type="button"
               onClick={handleTagsToggle}
-              className="flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-xs font-medium text-white/70 transition-colors duration-200 hover:bg-white/20 hover:text-white"
+              className="cursor-pointer flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-xs font-medium text-white/70 transition-colors duration-200 hover:bg-white/20 hover:text-white"
             >
               {isTagsExpanded ? (
                 <>

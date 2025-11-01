@@ -53,21 +53,13 @@ export interface RepoAnalysisRequest {
   url: string;
   readmeContent?: string;
   fileStructure?: string[];
+  topics?: string[];
+  customCategories?: string[];
 }
 
 export interface RepoAnalysisResult {
-  description: string;
-  tags: {
-    languages: string[];
-    frameworks: string[];
-    features: string[];
-    technologies: string[];
-    tools: string[];
-    domains: string[];
-    categories: string[];
-  };
-  confidence: number;
-  reasoning: string;
+  summary: string;
+  tags: string[];
 }
 
 export interface RepoAnalysisResponse {

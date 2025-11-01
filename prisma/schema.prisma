@@ -46,3 +46,10 @@ model RepoAiTag {
   @@unique([repoId, tagId])
   @@map("repo_ai_tags")
 }
+
+model CustomTag {
+  id      String @id @default(cuid())
+  content String @unique
+
+  @@map("custom_tags")
+}

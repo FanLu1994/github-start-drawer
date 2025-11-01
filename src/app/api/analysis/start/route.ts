@@ -2,9 +2,9 @@ import { NextResponse } from 'next/server';
 import { GitHubClient } from '@/lib/github';
 import { RepoService } from '@/lib/database/repos';
 import { TagService } from '@/lib/database/tags';
+import { CustomTagService } from '@/lib/database/custom-tags';
 import { RepoAnalyzer } from '@/lib/ai';
 import { analysisStateManager } from '@/lib/analysis-state';
-import { deduplicateAndNormalizeTags } from '@/lib/utils';
 
 export async function POST() {
   try {
@@ -16,6 +16,15 @@ export async function POST() {
         message: '分析已在进行中',
         progress: state.progress
       });
+    }
+
+    // 检查数据库是否有仓库
+    const reposInDb = await RepoService.findAll();
+    if (reposInDb.length === 0) {
+      return NextResponse.json(
+        { error: '数据库中没有仓库，请先进行同步' },
+        { status: 400 }
+      );
     }
 
     // 检查配置
@@ -56,12 +65,14 @@ export async function POST() {
 }
 
 async function startAnalysisProcess() {
+  // 重置停止状态
+  analysisStateManager.reset();
   analysisStateManager.setRunning(true);
   analysisStateManager.setError(null);
   analysisStateManager.setProgress({
     current: 0,
     total: 0,
-    status: '正在获取GitHub仓库...',
+    status: '正在获取数据库仓库...',
     completed: 0,
     failed: 0,
     processing: []
@@ -71,12 +82,30 @@ async function startAnalysisProcess() {
     const githubClient = new GitHubClient();
     const analyzer = new RepoAnalyzer();
 
-    // 获取所有星标仓库
-    analysisStateManager.setProgress({ status: '正在获取GitHub星标仓库...' });
-    const starredRepos = await githubClient.getAllStarredRepos();
+    // 从数据库获取所有未删除的仓库
+    analysisStateManager.setProgress({ status: '正在从数据库获取仓库...' });
+    const reposInDb = await RepoService.findAll();
+    
+    // 过滤掉已经有 AI 分析数据的仓库
+    const reposToAnalyze = reposInDb.filter(repo => !repo.aiDescription || repo.aiDescription.trim() === '');
+    
+    if (reposToAnalyze.length === 0) {
+      analysisStateManager.setProgress({ 
+        status: '所有仓库都已分析完成',
+        current: reposInDb.length,
+        total: reposInDb.length,
+        completed: reposInDb.length,
+        failed: 0
+      });
+      console.log('所有仓库都已分析完成，无需分析');
+      await new Promise(resolve => setTimeout(resolve, 1000)); // 等待1秒让用户看到消息
+      analysisStateManager.setProgress({ status: 'completed' });
+      return;
+    }
     
     analysisStateManager.setProgress({ 
-      total: starredRepos.length,
+      status: `找到 ${reposToAnalyze.length} 个需要分析的仓库`,
+      total: reposToAnalyze.length,
       current: 0,
       completed: 0,
       failed: 0,
@@ -88,15 +117,21 @@ async function startAnalysisProcess() {
     const semaphore = new Semaphore(CONCURRENT_LIMIT);
 
     // 创建分析任务
-    const analysisTasks = starredRepos.map(repo => 
-      analyzeRepoWithSemaphore(semaphore, repo, githubClient, analyzer)
+    const analysisTasks = reposToAnalyze.map(repo => 
+      analyzeRepoFromDb(semaphore, repo, githubClient, analyzer)
     );
 
     // 等待所有任务完成
     await Promise.allSettled(analysisTasks);
 
-    analysisStateManager.setProgress({ status: 'completed' });
-    console.log('所有仓库分析完成');
+    // 检查是否已停止
+    if (analysisStateManager.isStopped()) {
+      console.log('分析已停止');
+      analysisStateManager.setProgress({ status: '已停止' });
+    } else {
+      analysisStateManager.setProgress({ status: 'completed' });
+      console.log('所有仓库分析完成');
+    }
 
   } catch (error) {
     console.error('分析过程出错:', error);
@@ -137,43 +172,55 @@ class Semaphore {
   }
 }
 
-// 使用信号量控制的分析函数
-async function analyzeRepoWithSemaphore(
+// 从数据库分析仓库的函数
+async function analyzeRepoFromDb(
   semaphore: Semaphore,
-  repo: { full_name: string; name: string; owner: { login: string }; description?: string | null; language?: string | null; stargazers_count: number; forks_count: number; html_url: string; topics?: string[] },
+  repo: Awaited<ReturnType<typeof RepoService.findAll>>[0],
   githubClient: GitHubClient,
   analyzer: RepoAnalyzer
 ): Promise<void> {
   await semaphore.acquire();
   
   try {
-    analysisStateManager.addProcessing(repo.full_name);
+    // 检查是否已停止
+    if (analysisStateManager.isStopped()) {
+      return;
+    }
+    
+    analysisStateManager.addProcessing(repo.fullName);
     analysisStateManager.setProgress({ 
-      status: `正在分析仓库: ${repo.full_name} (${analysisStateManager.getState().progress.processing.length}个并行)`
+      status: `正在分析仓库: ${repo.fullName} (${analysisStateManager.getState().progress.processing.length}个并行)`
     });
 
-    // 检查仓库是否已存在
-    const existingRepo = await RepoService.findByFullName(repo.full_name);
-    if (existingRepo) {
-      console.log(`仓库 ${repo.full_name} 已存在，跳过`);
-      analysisStateManager.incrementCompleted();
+    // 再次检查是否已停止（在开始处理前）
+    if (analysisStateManager.isStopped()) {
       return;
     }
 
-    // 获取仓库详细信息（用于验证仓库存在性并获取 topics）
-    const repoDetails = await githubClient.getRepo(repo.owner.login, repo.name);
+    // 解析仓库名称获取 owner 和 name
+    const [owner, repoName] = repo.fullName.split('/');
+    if (!owner || !repoName) {
+      console.error(`仓库名称格式错误: ${repo.fullName}`);
+      analysisStateManager.incrementFailed();
+      return;
+    }
     
     // 获取README内容（支持多种格式）
     let readmeContent = '';
     const readmeFiles = ['README.md', 'README.rst', 'README.txt', 'README', 'readme.md', 'readme.rst', 'readme.txt', 'readme'];
     
     for (const readmeFile of readmeFiles) {
+      // 检查是否已停止
+      if (analysisStateManager.isStopped()) {
+        return;
+      }
+      
       try {
-        const readme = await githubClient.getFileContent(repo.owner.login, repo.name, readmeFile);
+        const readme = await githubClient.getFileContent(owner, repoName, readmeFile);
         if (readme && readme.content) {
           // 解码 base64 内容
           readmeContent = Buffer.from(readme.content, 'base64').toString('utf-8');
-          console.log(`成功获取 ${repo.full_name} 的 ${readmeFile}`);
+          console.log(`成功获取 ${repo.fullName} 的 ${readmeFile}`);
           break;
         }
       } catch {
@@ -183,7 +230,12 @@ async function analyzeRepoWithSemaphore(
     }
     
     if (!readmeContent) {
-      console.log(`仓库 ${repo.full_name} 没有找到任何 README 文件`);
+      console.log(`仓库 ${repo.fullName} 没有找到任何 README 文件`);
+    }
+
+    // 检查是否已停止
+    if (analysisStateManager.isStopped()) {
+      return;
     }
 
     // 获取文件结构（增强版，优先获取重要文件）
@@ -191,7 +243,7 @@ async function analyzeRepoWithSemaphore(
     let importantFiles: string[] = [];
     
     try {
-      const tree = await githubClient.getRepoTree(repo.owner.login, repo.name, 'HEAD', true);
+      const tree = await githubClient.getRepoTree(owner, repoName, 'HEAD', true);
       
       // 定义重要文件模式
       const importantPatterns = [
@@ -235,45 +287,48 @@ async function analyzeRepoWithSemaphore(
         ...otherFiles.slice(0, 30)      // 最多30个其他文件
       ];
       
-      console.log(`获取 ${repo.full_name} 文件结构: ${allFiles.length} 个文件，其中 ${importantFiles.length} 个重要文件`);
+      console.log(`获取 ${repo.fullName} 文件结构: ${allFiles.length} 个文件，其中 ${importantFiles.length} 个重要文件`);
       
     } catch (error) {
-      console.log(`无法获取 ${repo.full_name} 的文件结构:`, error);
+      console.log(`无法获取 ${repo.fullName} 的文件结构:`, error);
     }
 
-    // AI分析
+    // 在 AI 分析前再次检查是否已停止
+    if (analysisStateManager.isStopped()) {
+      return;
+    }
+
+    // 获取自定义标签
+    const customTags = await CustomTagService.findAll();
+    const customCategories = customTags.map(tag => tag.content);
+
+    // AI分析（使用数据库中的仓库信息）
     const analysisResult = await analyzer.analyzeRepo({
       name: repo.name,
-      fullName: repo.full_name,
+      fullName: repo.fullName,
       description: repo.description || undefined,
       language: repo.language || undefined,
-      stars: repo.stargazers_count,
-      forks: repo.forks_count,
-      url: repo.html_url,
+      stars: repo.stars,
+      forks: repo.forks,
+      url: repo.url,
       readmeContent,
-      fileStructure
+      fileStructure,
+      topics: repo.topics || [],
+      customCategories
     });
 
     if (analysisResult.success && analysisResult.data) {
-      // 使用工具函数进行标签去重和标准化
-      const uniqueTags = deduplicateAndNormalizeTags(analysisResult.data.tags);
+      // 标签去重和标准化
+      const uniqueTags = [...new Set(analysisResult.data.tags)];
 
       // 将标签保存到 tags 表
       if (uniqueTags.length > 0) {
         await TagService.createMany(uniqueTags);
       }
 
-      // 保存仓库到数据库
-      await RepoService.create({
-        name: repo.name,
-        fullName: repo.full_name,
-        description: repo.description || '',
-        stars: repo.stargazers_count,
-        forks: repo.forks_count,
-        language: repo.language || undefined,
-        url: repo.html_url,
-        aiDescription: analysisResult.data.description,
-        topics: repoDetails.topics || repo.topics || [],
+      // 更新仓库的 AI 分析数据
+      await RepoService.update(repo.id, {
+        aiDescription: analysisResult.data.summary,
         aiTags: uniqueTags
       });
 
@@ -281,18 +336,16 @@ async function analyzeRepoWithSemaphore(
       const hasReadme = !!readmeContent;
       const fileCount = fileStructure.length;
       const importantFileCount = importantFiles.length;
-      const confidence = analysisResult.data.confidence || 0;
       
-      console.log(`✅ 成功分析并保存仓库: ${repo.full_name}`);
+      console.log(`✅ 成功分析并更新仓库: ${repo.fullName}`);
       console.log(`   - README: ${hasReadme ? '有' : '无'}`);
       console.log(`   - 文件总数: ${fileCount} (重要文件: ${importantFileCount})`);
-      console.log(`   - AI置信度: ${(confidence * 100).toFixed(1)}%`);
       console.log(`   - 生成标签: ${uniqueTags.join(', ')}`);
-      console.log(`   - AI描述: ${analysisResult.data.description.substring(0, 100)}${analysisResult.data.description.length > 100 ? '...' : ''}`);
+      console.log(`   - AI概述: ${analysisResult.data.summary}`);
       
       analysisStateManager.incrementCompleted();
     } else {
-      console.error(`❌ 分析仓库失败: ${repo.full_name}`);
+      console.error(`❌ 分析仓库失败: ${repo.fullName}`);
       console.error(`   - 错误信息: ${analysisResult.error}`);
       console.error(`   - README状态: ${readmeContent ? '有' : '无'}`);
       console.error(`   - 文件结构: ${fileStructure.length} 个文件`);
@@ -300,10 +353,10 @@ async function analyzeRepoWithSemaphore(
     }
 
   } catch (error) {
-    console.error(`处理仓库 ${repo.full_name} 时出错:`, error);
+    console.error(`处理仓库 ${repo.fullName} 时出错:`, error);
     analysisStateManager.incrementFailed();
   } finally {
-    analysisStateManager.removeProcessing(repo.full_name);
+    analysisStateManager.removeProcessing(repo.fullName);
     semaphore.release();
   }
 }

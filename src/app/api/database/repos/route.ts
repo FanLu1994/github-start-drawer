@@ -1,5 +1,225 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { RepoService } from '@/lib/database/repos';
+import { prisma } from '@/lib/prisma';
+import { SearchQueryAnalyzer, type SearchQueryAnalysis } from '@/lib/ai/search-query-analyzer';
+
+type RepoWithTags = Awaited<ReturnType<typeof prisma.repo.findMany>>[number];
+
+const KNOWN_LANGUAGES = [
+  'javascript',
+  'typescript',
+  'python',
+  'java',
+  'go',
+  'rust',
+  'c++',
+  'c#',
+  'php',
+  'ruby',
+  'swift',
+  'kotlin',
+  'dart',
+  'scala',
+  'clojure',
+  'elixir',
+  'haskell'
+];
+
+const TEXT_WEIGHTS = {
+  name: 0.4,
+  fullName: 0.35,
+  description: 0.3,
+  customDescription: 0.32,
+  topics: 0.25,
+  aiTags: 0.22,
+  customTags: 0.24,
+  aiSummary: 0.15,
+  aiPlatforms: 0.18,
+  language: 0.12
+};
+
+const normalizeTerm = (term: string): string => term.trim().toLowerCase();
+
+const computeTextScore = (text: string | null | undefined, terms: string[]): number => {
+  if (!text || terms.length === 0) return 0;
+  const lowerText = text.toLowerCase();
+  let matches = 0;
+  terms.forEach(term => {
+    if (term && lowerText.includes(term)) {
+      matches += 1;
+    }
+  });
+  return matches / terms.length;
+};
+
+const computeArrayScore = (values: string[] | null | undefined, terms: string[]): number => {
+  if (!values || values.length === 0 || terms.length === 0) return 0;
+  const lowerValues = values.map(value => value.toLowerCase());
+  let matches = 0;
+  terms.forEach(term => {
+    if (term && lowerValues.some(value => value.includes(term))) {
+      matches += 1;
+    }
+  });
+  return matches / terms.length;
+};
+
+const deriveRepoPlatforms = (repo: RepoWithTags): string[] => {
+  const result = new Set<string>();
+  const platformKeywords: Record<string, string[]> = {
+    web: ['web', 'browser', 'frontend', 'website'],
+    cli: ['cli', 'command line', 'terminal', '命令行'],
+    docker: ['docker', 'container'],
+    ios: ['ios', 'iphone', 'ipad'],
+    android: ['android'],
+    linux: ['linux'],
+    windows: ['windows'],
+    mac: ['mac', 'macos', 'osx'],
+    cloud: ['cloud', 'aws', 'azure', 'gcp']
+  };
+
+  const checkValue = (value: string) => {
+    const lowerValue = value.toLowerCase();
+    Object.entries(platformKeywords).forEach(([platform, keywords]) => {
+      if (keywords.some(keyword => lowerValue.includes(keyword))) {
+        result.add(platform);
+      }
+    });
+  };
+
+  repo.topics?.forEach(checkValue);
+  repo.repoAiTags?.forEach(tag => checkValue(tag.tag.name));
+  if (repo.language) {
+    checkValue(repo.language);
+  }
+
+  return Array.from(result);
+};
+
+const calculateScore = (repo: RepoWithTags, analysis: SearchQueryAnalysis): number => {
+  const keywords = analysis.keywords.map(normalizeTerm);
+  const synonyms = analysis.synonyms.map(normalizeTerm);
+  const secondaryKeywords = analysis.secondaryKeywords.map(normalizeTerm);
+  const technicalKeywords = analysis.technicalKeywords.map(normalizeTerm);
+  const categories = analysis.categories.map(normalizeTerm);
+  const platforms = analysis.platforms.map(normalizeTerm);
+
+  const nameTerms = Array.from(new Set([...keywords, ...synonyms]));
+  const descriptionTerms = Array.from(new Set([...keywords, ...synonyms, ...secondaryKeywords, ...categories]));
+  const tagTerms = Array.from(new Set([...keywords, ...synonyms, ...categories]));
+  const summaryTerms = Array.from(new Set([...keywords, ...secondaryKeywords, ...technicalKeywords]));
+  const platformTerms = platforms;
+
+  const languageTerms = Array.from(new Set([
+    ...platforms,
+    ...keywords.filter(term => KNOWN_LANGUAGES.includes(term))
+  ]));
+
+  const repoAiTags = repo.repoAiTags?.map(tag => tag.tag.name) || [];
+  const repoPlatforms = deriveRepoPlatforms(repo);
+
+  const score = (
+    TEXT_WEIGHTS.name * computeTextScore(repo.name, nameTerms) +
+    TEXT_WEIGHTS.fullName * computeTextScore(repo.fullName, nameTerms) +
+    TEXT_WEIGHTS.description * computeTextScore(repo.description, descriptionTerms) +
+    TEXT_WEIGHTS.customDescription * computeTextScore(repo.aiDescription, descriptionTerms) +
+    TEXT_WEIGHTS.topics * computeArrayScore(repo.topics || [], tagTerms) +
+    TEXT_WEIGHTS.aiTags * computeArrayScore(repoAiTags, tagTerms) +
+    TEXT_WEIGHTS.customTags * computeArrayScore(repoAiTags, tagTerms) +
+    TEXT_WEIGHTS.aiSummary * computeTextScore(repo.aiDescription, summaryTerms) +
+    TEXT_WEIGHTS.aiPlatforms * computeArrayScore(repoPlatforms, platformTerms) +
+    TEXT_WEIGHTS.language * computeTextScore(repo.language, languageTerms)
+  );
+
+  return score;
+};
+
+const buildCandidateQuery = (analysis: SearchQueryAnalysis) => {
+  const terms = Array.from(new Set([
+    ...analysis.keywords,
+    ...analysis.secondaryKeywords,
+    ...analysis.technicalKeywords,
+    ...analysis.synonyms,
+    ...analysis.categories
+  ].map(normalizeTerm))).filter(Boolean);
+
+  const orConditions: any[] = [];
+
+  const addTextConditions = (field: 'name' | 'fullName' | 'description' | 'aiDescription', sourceTerms: string[]) => {
+    sourceTerms.forEach(term => {
+      orConditions.push({ [field]: { contains: term, mode: 'insensitive' } });
+    });
+  };
+
+  addTextConditions('name', terms);
+  addTextConditions('fullName', terms);
+  addTextConditions('description', terms);
+  addTextConditions('aiDescription', terms);
+
+  analysis.platforms.map(normalizeTerm).forEach(platform => {
+    orConditions.push({ language: { contains: platform, mode: 'insensitive' } });
+  });
+
+  return orConditions;
+};
+
+const searchWithWeights = async (
+  query: string,
+  page: number,
+  perPage: number,
+  analyzer: SearchQueryAnalyzer
+) => {
+  const analysis = await analyzer.analyzeQuery(query);
+
+  if (!analysis) {
+    return null;
+  }
+
+  const skip = (page - 1) * perPage;
+
+  const candidateConditions = buildCandidateQuery(analysis);
+
+  if (candidateConditions.length === 0) {
+    return null;
+  }
+
+  const candidates = await prisma.repo.findMany({
+    where: {
+      isDeleted: false,
+      OR: candidateConditions
+    },
+    take: 200,
+    include: {
+      repoAiTags: {
+        include: {
+          tag: true
+        }
+      }
+    }
+  });
+
+  if (candidates.length === 0) {
+    return { repos: [], total: 0 };
+  }
+
+  const scored = candidates
+    .map(repo => ({ repo, score: calculateScore(repo, analysis) }))
+    .filter(item => item.score > 0)
+    .sort((a, b) => {
+      if (b.score !== a.score) {
+        return b.score - a.score;
+      }
+      return (b.repo.stars || 0) - (a.repo.stars || 0);
+    });
+
+  const total = scored.length;
+  const paginated = scored.slice(skip, skip + perPage);
+
+  return {
+    repos: paginated.map(item => ({ ...item.repo, __score: item.score })),
+    total
+  };
+};
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,11 +236,22 @@ export async function GET(request: NextRequest) {
     let totalCount;
 
     if (search) {
-      // 搜索模式
-      repos = await RepoService.search(search);
-      totalCount = repos.length;
-      // 分页
-      repos = repos.slice(skip, skip + perPage);
+      const analyzer = new SearchQueryAnalyzer();
+      let weightedResult = null;
+
+      if (analyzer.isAvailable()) {
+        weightedResult = await searchWithWeights(search, page, perPage, analyzer);
+      }
+
+      if (weightedResult) {
+        repos = weightedResult.repos;
+        totalCount = weightedResult.total;
+      } else {
+        // 退化为基础搜索
+        repos = await RepoService.search(search);
+        totalCount = repos.length;
+        repos = repos.slice(skip, skip + perPage);
+      }
     } else if (tags.length > 0) {
       // 按标签筛选
       repos = await RepoService.findByTags(tags);
@@ -40,14 +271,16 @@ export async function GET(request: NextRequest) {
       id: repo.id, // 保持字符串类型，因为数据库ID是CUID字符串
       name: repo.name,
       full_name: repo.fullName,
-      description: repo.aiDescription || repo.description, // 优先使用AI生成的描述，如果没有则使用原始描述
+      description: repo.description || null, // 原始 GitHub 描述
+      aiDescription: repo.aiDescription || null, // AI 生成的描述
       stargazers_count: repo.stars,
       language: repo.language,
-      topics: repo.topics || [], // 原始标签
+      topics: repo.topics || [], // 原始 GitHub 标签
       aiTags: repo.repoAiTags?.map(repoAiTag => repoAiTag.tag.name) || [], // AI分析的标签（从关联表提取）
       html_url: repo.url,
       created_at: repo.createdAt.toISOString(),
-      updated_at: repo.updatedAt.toISOString()
+      updated_at: repo.updatedAt.toISOString(),
+      score: (repo as any).__score ?? undefined
     }));
 
     return NextResponse.json({
