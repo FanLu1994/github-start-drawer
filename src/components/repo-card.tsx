@@ -129,6 +129,10 @@ export function RepoCard({
           </div>
         </div>
 
+        {fullName && (
+          <p className="mb-2 w-full text-xs text-white/60 line-clamp-1 break-all">{fullName}</p>
+        )}
+
         {/* Description */}
         <p
           className={`mt-2 flex-1 text-sm text-white/85 transition-colors duration-300 ${
