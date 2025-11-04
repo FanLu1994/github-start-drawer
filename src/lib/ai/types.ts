@@ -29,7 +29,7 @@ export interface StreamResponse {
 export interface AIError {
   message: string;
   code?: string;
-  details?: any;
+  details?: unknown;
   timestamp: Date;
 }
 

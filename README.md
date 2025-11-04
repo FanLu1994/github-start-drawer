@@ -33,6 +33,7 @@
 - `DEEPSEEK_API_KEY` - DeepSeek API 密钥
 - `GITHUB_TOKEN` - GitHub Personal Access Token
 - `DATABASE_URL` - 数据库连接字符串（PostgreSQL）
+- `OPERATION_PASSWORD` - 操作密码（同步和分析操作需要）
 
 #### 可选环境变量
 

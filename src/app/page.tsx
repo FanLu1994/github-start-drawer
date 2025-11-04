@@ -10,6 +10,7 @@ import { RepoCard } from "@/components/repo-card";
 import { GitHubConfigPrompt } from "@/components/github-config-prompt";
 import { CustomTagManager } from "@/components/custom-tag-manager";
 import { Search, Github, Code, Database, Cpu, Globe, Smartphone, Zap, Shield, ChevronLeft, ChevronRight, Loader2, LucideIcon, CheckCircle, XCircle, Info, RefreshCw, Settings, Square, Check } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 interface ConfigStatus {
   configured: boolean;
@@ -90,6 +91,9 @@ export default function Home() {
   const [isInitialized, setIsInitialized] = useState(false);
   const [customTagManagerOpen, setCustomTagManagerOpen] = useState(false);
   const [showAIAnalysis, setShowAIAnalysis] = useState(true); // false: 显示原始GitHub信息, true: 显示AI分析信息
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [password, setPassword] = useState("");
+  const [pendingAction, setPendingAction] = useState<'sync' | 'analyze' | null>(null);
   const [toast, setToast] = useState<{
     show: boolean;
     type: 'success' | 'error' | 'info';
@@ -301,6 +305,12 @@ export default function Home() {
 
   // 开始分析仓库
   const startAnalysis = async () => {
+    setPendingAction('analyze');
+    setPasswordDialogOpen(true);
+  };
+
+  // 执行分析操作
+  const executeAnalysis = async (password: string) => {
     setIsAnalyzing(true);
     setAnalysisProgress({ current: 0, total: 0, status: '正在获取GitHub仓库...' });
     
@@ -310,9 +320,19 @@ export default function Home() {
         headers: {
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ password }),
       });
 
       if (!response.ok) {
+        if (response.status === 401) {
+          const errorBody = await response.json().catch(() => ({}));
+          if (errorBody.error === '密码错误') {
+            showToast('error', '密码错误', '请重新输入正确的密码');
+            setIsAnalyzing(false);
+            setAnalysisProgress(null);
+            return;
+          }
+        }
         throw new Error('启动分析失败');
       }
 
@@ -490,6 +510,12 @@ export default function Home() {
 
   // 同步 GitHub Star 的仓库
   const handleSync = async () => {
+    setPendingAction('sync');
+    setPasswordDialogOpen(true);
+  };
+
+  // 执行同步操作
+  const executeSync = async (password: string) => {
     setIsSyncing(true);
     setSyncProgress({ current: 0, total: 0, status: '正在启动同步...', synced: 0, skipped: 0, errors: 0 });
     
@@ -498,12 +524,19 @@ export default function Home() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-        }
+        },
+        body: JSON.stringify({ password }),
       });
 
       if (!response.ok) {
         if (response.status === 401) {
           const errorBody = await response.json().catch(() => ({}));
+          if (errorBody.error === '密码错误') {
+            showToast('error', '密码错误', '请重新输入正确的密码');
+            setIsSyncing(false);
+            setSyncProgress(null);
+            return;
+          }
           const code = (errorBody && errorBody.code) || 'UNAUTHORIZED';
           const details = errorBody && (errorBody.details || errorBody.error);
           showToast('error', code === 'GITHUB_TOKEN_MISSING' ? 'GitHub Token 未配置' : 'GitHub Token 无效', details);
@@ -950,6 +983,64 @@ export default function Home() {
           fetchTags();
         }}
       />
+
+      {/* 密码输入对话框 */}
+      <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>输入操作密码</DialogTitle>
+            <DialogDescription>
+              {pendingAction === 'sync' ? '同步操作需要密码验证' : '分析操作需要密码验证'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Input
+              type="password"
+              placeholder="请输入密码"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyPress={(e) => {
+                if (e.key === 'Enter') {
+                  if (pendingAction === 'sync') {
+                    executeSync(password);
+                  } else if (pendingAction === 'analyze') {
+                    executeAnalysis(password);
+                  }
+                  setPasswordDialogOpen(false);
+                  setPassword("");
+                  setPendingAction(null);
+                }
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setPasswordDialogOpen(false);
+                setPassword("");
+                setPendingAction(null);
+              }}
+            >
+              取消
+            </Button>
+            <Button
+              onClick={() => {
+                if (pendingAction === 'sync') {
+                  executeSync(password);
+                } else if (pendingAction === 'analyze') {
+                  executeAnalysis(password);
+                }
+                setPasswordDialogOpen(false);
+                setPassword("");
+                setPendingAction(null);
+              }}
+            >
+              确认
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

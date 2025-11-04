@@ -3,7 +3,15 @@ import { RepoService } from '@/lib/database/repos';
 import { prisma } from '@/lib/prisma';
 import { SearchQueryAnalyzer, type SearchQueryAnalysis } from '@/lib/ai/search-query-analyzer';
 
-type RepoWithTags = Awaited<ReturnType<typeof prisma.repo.findMany>>[number];
+type RepoWithTags = Awaited<ReturnType<typeof prisma.repo.findMany<{
+  include: {
+    repoAiTags: {
+      include: {
+        tag: true;
+      };
+    };
+  };
+}>>>[number];
 
 const KNOWN_LANGUAGES = [
   'javascript',
@@ -143,7 +151,7 @@ const buildCandidateQuery = (analysis: SearchQueryAnalysis) => {
     ...analysis.categories
   ].map(normalizeTerm))).filter(Boolean);
 
-  const orConditions: any[] = [];
+  const orConditions: Array<Record<string, { contains: string; mode: 'insensitive' }>> = [];
 
   const addTextConditions = (field: 'name' | 'fullName' | 'description' | 'aiDescription', sourceTerms: string[]) => {
     sourceTerms.forEach(term => {
@@ -267,21 +275,25 @@ export async function GET(request: NextRequest) {
     }
 
     // 转换为前端需要的格式
-    const formattedRepos = repos.map(repo => ({
-      id: repo.id, // 保持字符串类型，因为数据库ID是CUID字符串
-      name: repo.name,
-      full_name: repo.fullName,
-      description: repo.description || null, // 原始 GitHub 描述
-      aiDescription: repo.aiDescription || null, // AI 生成的描述
-      stargazers_count: repo.stars,
-      language: repo.language,
-      topics: repo.topics || [], // 原始 GitHub 标签
-      aiTags: repo.repoAiTags?.map(repoAiTag => repoAiTag.tag.name) || [], // AI分析的标签（从关联表提取）
-      html_url: repo.url,
-      created_at: repo.createdAt.toISOString(),
-      updated_at: repo.updatedAt.toISOString(),
-      score: (repo as any).__score ?? undefined
-    }));
+    const formattedRepos = repos.map(repo => {
+      // 确保 repoAiTags 存在
+      const repoWithTags = repo as RepoWithTags;
+      return {
+        id: repo.id, // 保持字符串类型，因为数据库ID是CUID字符串
+        name: repo.name,
+        full_name: repo.fullName,
+        description: repo.description || null, // 原始 GitHub 描述
+        aiDescription: repo.aiDescription || null, // AI 生成的描述
+        stargazers_count: repo.stars,
+        language: repo.language,
+        topics: repo.topics || [], // 原始 GitHub 标签
+        aiTags: repoWithTags.repoAiTags?.map(repoAiTag => repoAiTag.tag.name) || [], // AI分析的标签（从关联表提取）
+        html_url: repo.url,
+        created_at: repo.createdAt.toISOString(),
+        updated_at: repo.updatedAt.toISOString(),
+        score: (repo as { __score?: number }).__score ?? undefined
+      };
+    });
 
     return NextResponse.json({
       repos: formattedRepos,

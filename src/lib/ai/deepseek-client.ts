@@ -1,12 +1,12 @@
 import { ChatDeepSeek } from '@langchain/deepseek';
 import { HumanMessage, AIMessage, SystemMessage } from '@langchain/core/messages';
-import { ConfigManager, type DeepSeekConfig } from './config';
+import { ConfigManager } from './config';
 
 /**
  * DeepSeek AI 客户端
  */
 export class DeepSeekClient {
-  private model: ChatDeepSeek;
+  private model!: ChatDeepSeek;
   private configManager: ConfigManager;
 
   constructor() {
@@ -25,8 +25,7 @@ export class DeepSeekClient {
       apiKey: config.apiKey,
       model: config.model,
       temperature: config.temperature,
-      maxTokens: config.maxTokens,
-      baseURL: config.baseURL
+      maxTokens: config.maxTokens
     });
   }
 

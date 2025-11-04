@@ -20,11 +20,10 @@ export class GitHubClient {
   constructor(config?: GitHubConfig) {
     this.configManager = GitHubConfigManager.getInstance();
     
-    if (config) {
-      this.configManager.setConfig(config);
-    }
+    // 配置通过环境变量管理，不支持运行时设置
+    // 如果需要自定义配置，请通过环境变量设置
 
-    this.baseURL = this.configManager.getConfig()?.baseURL || 'https://api.github.com';
+    this.baseURL = config?.baseURL || this.configManager.getConfig()?.baseURL || 'https://api.github.com';
   }
 
   private async request<T>(
@@ -292,11 +291,11 @@ export class GitHubClient {
 
   /**
    * 更新配置
+   * 注意：配置通过环境变量管理，此方法仅更新客户端实例的 baseURL
    */
   updateConfig(config: Partial<GitHubConfig>): void {
-    const currentConfig = this.configManager.getConfig();
-    if (currentConfig) {
-      this.configManager.setConfig({ ...currentConfig, ...config });
+    if (config.baseURL) {
+      this.baseURL = config.baseURL;
     }
   }
 }

@@ -57,7 +57,7 @@ const extractJson = (text: string): string | null => {
   try {
     JSON.parse(normalized)
     return normalized
-  } catch (error) {
+  } catch {
     const match = normalized.match(/\{[\s\S]*\}/)
     if (match) {
       try {

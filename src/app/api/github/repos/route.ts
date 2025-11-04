@@ -26,18 +26,7 @@ export async function GET(request: NextRequest) {
       direction: direction as 'asc' | 'desc'
     });
 
-    // 获取总数（通过第一页计算）
-    let totalCount = 0;
-    if (page === 1) {
-      const firstPageRepos = await githubClient.getMyStarredRepos({
-        page: 1,
-        per_page: 1,
-        sort: sort as 'created' | 'updated',
-        direction: direction as 'asc' | 'desc'
-      });
-      // GitHub API不直接提供总数，我们需要通过其他方式获取
-      // 这里先返回当前页的数据，总数可以通过其他API获取
-    }
+    // GitHub API不直接提供总数，这里先返回当前页的数据
 
     return NextResponse.json({
       repos: starredRepos,
@@ -52,13 +41,18 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('获取GitHub仓库失败:', error);
-    const code = (error as any)?.code;
+    interface ErrorWithCode extends Error {
+      code?: string;
+      details?: string;
+    }
+    const err = error as ErrorWithCode;
+    const code = err?.code;
     if (code === 'GITHUB_TOKEN_MISSING' || code === 'GITHUB_TOKEN_INVALID') {
       return NextResponse.json(
         {
           error: code === 'GITHUB_TOKEN_MISSING' ? 'GitHub Token 未配置' : 'GitHub Token 无效',
           code,
-          details: (error as any)?.details || (error instanceof Error ? error.message : undefined)
+          details: err?.details || (error instanceof Error ? error.message : undefined)
         },
         { status: 401 }
       );

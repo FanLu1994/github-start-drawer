@@ -5,6 +5,25 @@ import { syncStateManager } from '@/lib/sync-state';
 
 export async function POST(request: NextRequest) {
   try {
+    // 验证密码
+    const body = await request.json().catch(() => ({}));
+    const providedPassword = body.password;
+    const expectedPassword = process.env.OPERATION_PASSWORD;
+
+    if (!expectedPassword) {
+      return NextResponse.json(
+        { error: '操作密码未配置' },
+        { status: 500 }
+      );
+    }
+
+    if (providedPassword !== expectedPassword) {
+      return NextResponse.json(
+        { error: '密码错误' },
+        { status: 401 }
+      );
+    }
+
     const state = syncStateManager.getState();
     
     // 如果已经在运行，返回当前状态
@@ -28,13 +47,18 @@ export async function POST(request: NextRequest) {
     try {
       await githubClient.getMyStarredRepos({ per_page: 1, page: 1 });
     } catch (error) {
-      const errorCode = (error as any)?.code;
+      interface ErrorWithCode extends Error {
+        code?: string;
+        details?: string;
+      }
+      const err = error as ErrorWithCode;
+      const errorCode = err?.code;
       if (errorCode === 'GITHUB_TOKEN_MISSING' || errorCode === 'GITHUB_TOKEN_INVALID') {
         return NextResponse.json(
           {
             error: errorCode === 'GITHUB_TOKEN_MISSING' ? 'GitHub Token 未配置' : 'GitHub Token 无效',
             code: errorCode,
-            details: (error as any)?.details || (error instanceof Error ? error.message : undefined)
+            details: err?.details || (error instanceof Error ? error.message : undefined)
           },
           { status: 401 }
         );
@@ -157,8 +181,13 @@ async function startSyncProcess() {
 
   } catch (error) {
     console.error('同步过程出错:', error);
-    const errorCode = (error as any)?.code;
-    const errorDetails = (error as any)?.details || (error instanceof Error ? error.message : undefined);
+    interface ErrorWithCode extends Error {
+      code?: string;
+      details?: string;
+    }
+    const err = error as ErrorWithCode;
+    const errorCode = err?.code;
+    const errorDetails = err?.details || (error instanceof Error ? error.message : undefined);
     
     // 如果是 Token 错误，设置特殊标记
     if (errorCode === 'GITHUB_TOKEN_MISSING' || errorCode === 'GITHUB_TOKEN_INVALID') {

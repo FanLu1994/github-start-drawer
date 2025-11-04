@@ -1,4 +1,6 @@
 import { PrismaClient } from '@prisma/client'
+import { RepoService } from '../src/lib/database/repos'
+import { TagService } from '../src/lib/database/tags'
 
 const prisma = new PrismaClient()
 
@@ -70,10 +72,31 @@ async function main() {
 
   console.log('创建仓库...')
   for (const repo of repos) {
-    await prisma.repo.upsert({
-      where: { fullName: repo.fullName },
-      update: {},
-      create: {
+    // 检查仓库是否已存在
+    const existingRepo = await RepoService.findByFullName(repo.fullName)
+    
+    if (existingRepo) {
+      // 如果已存在，更新标签关联
+      if (repo.tags && repo.tags.length > 0) {
+        // 删除旧的标签关联
+        await prisma.repoAiTag.deleteMany({
+          where: { repoId: existingRepo.id }
+        })
+        
+        // 创建新的标签关联
+        for (const tagName of repo.tags) {
+          const tag = await TagService.findOrCreate(tagName)
+          await prisma.repoAiTag.create({
+            data: {
+              repoId: existingRepo.id,
+              tagId: tag.id
+            }
+          })
+        }
+      }
+    } else {
+      // 如果不存在，创建新仓库
+      await RepoService.create({
         name: repo.name,
         fullName: repo.fullName,
         description: repo.description,
@@ -82,9 +105,10 @@ async function main() {
         language: repo.language,
         url: repo.url,
         aiDescription: repo.aiDescription,
-        tags: repo.tags
-      }
-    })
+        aiTags: repo.tags || [],
+        topics: []
+      })
+    }
   }
 
   console.log('数据库初始化完成！')

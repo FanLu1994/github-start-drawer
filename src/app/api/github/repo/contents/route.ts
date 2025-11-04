@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     }
 
     const options: RepoContentOptions = {
-      ref,
+      ref: ref || undefined,
       recursive
     };
 
@@ -42,13 +42,18 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('获取 GitHub 仓库内容错误:', error);
-    const code = (error as any)?.code;
+    interface ErrorWithCode extends Error {
+      code?: string;
+      details?: string;
+    }
+    const err = error as ErrorWithCode;
+    const code = err?.code;
     if (code === 'GITHUB_TOKEN_MISSING' || code === 'GITHUB_TOKEN_INVALID') {
       return NextResponse.json(
         {
           error: code === 'GITHUB_TOKEN_MISSING' ? 'GitHub Token 未配置' : 'GitHub Token 无效',
           code,
-          details: (error as any)?.details || (error instanceof Error ? error.message : undefined)
+          details: err?.details || (error instanceof Error ? error.message : undefined)
         },
         { status: 401 }
       );

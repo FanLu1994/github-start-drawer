@@ -3,7 +3,18 @@
 import { useState, useEffect } from 'react';
 
 export default function GitHubTestPage() {
-  const [stars, setStars] = useState<any[]>([]);
+  interface GitHubRepo {
+    html_url?: string;
+    full_name?: string;
+    stargazers_count?: number;
+    description?: string;
+    language?: string;
+    updated_at?: string;
+    forks_count?: number;
+    watchers_count?: number;
+    open_issues_count?: number;
+  }
+  const [stars, setStars] = useState<GitHubRepo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [isConfigured, setIsConfigured] = useState(false);

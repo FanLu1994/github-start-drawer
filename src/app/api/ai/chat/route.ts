@@ -5,7 +5,7 @@ import { ChatMessage, AIResponse } from '@/lib/ai/types';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { messages, systemPrompt, config } = body;
+    const { messages } = body;
 
     // 验证请求数据
     if (!messages || !Array.isArray(messages) || messages.length === 0) {

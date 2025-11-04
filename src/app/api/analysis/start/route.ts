@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { GitHubClient } from '@/lib/github';
 import { RepoService } from '@/lib/database/repos';
 import { TagService } from '@/lib/database/tags';
@@ -6,8 +6,27 @@ import { CustomTagService } from '@/lib/database/custom-tags';
 import { RepoAnalyzer } from '@/lib/ai';
 import { analysisStateManager } from '@/lib/analysis-state';
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
+    // 验证密码
+    const body = await request.json().catch(() => ({}));
+    const providedPassword = body.password;
+    const expectedPassword = process.env.OPERATION_PASSWORD;
+
+    if (!expectedPassword) {
+      return NextResponse.json(
+        { error: '操作密码未配置' },
+        { status: 500 }
+      );
+    }
+
+    if (providedPassword !== expectedPassword) {
+      return NextResponse.json(
+        { error: '密码错误' },
+        { status: 401 }
+      );
+    }
+
     const state = analysisStateManager.getState();
     
     // 如果已经在运行，返回当前状态
