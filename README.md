@@ -1,49 +1,59 @@
-🌟 GitHub Star Manager — 智能 Star 管理器
+## GitHub Star Manager
 
-一个基于 Next.js + GitHub API 构建的智能化 GitHub Star 管理平台。
-它不仅能让你可视化地浏览、搜索和分类你的 Star 项目，还通过 AI 智能分析与推荐算法，帮助你重新发现那些被你“收藏后遗忘”的宝藏项目。
+基于 Next.js 和 GitHub API 的 Star 仓库管理工具。
 
-🚀 项目背景
+## 功能
 
-在 GitHub 上 Star 项目是一种收藏与关注的方式，但：
+- **GitHub 同步**：从 GitHub 同步星标仓库到本地数据库
+- **AI 分析**：使用 DeepSeek API 分析仓库，生成描述和标签
+- **仓库管理**：查看、搜索、删除仓库，支持分页浏览
+- **标签管理**：自定义标签，按标签筛选仓库
+- **搜索**：支持按仓库名称和描述搜索
 
-Star 一多就很难管理；
+## 技术栈
 
-想找特定项目时搜索效率低；
+- **前端框架**：Next.js 15 (App Router)
+- **UI 组件**：TailwindCSS + Shadcn/ui
+- **后端 API**：GitHub REST API
+- **数据库**：PostgreSQL (Prisma ORM)
+- **AI**：DeepSeek API
 
-很多优秀的项目被埋没。
+## 🚀 部署到 Vercel
 
-因此，我们希望打造一个能「像管理知识库一样管理你的 Star」的工具。
-它不只是展示数据，而是帮助你理解、分类、推荐与探索。
+一键部署到 Vercel：
 
-✨ 核心功能
-模块	功能描述
-🔑 GitHub 登录与授权	使用 OAuth2 登录，安全获取用户 Star 数据
-📚 Star 管理	分页展示 Star 项目，支持按语言、时间、仓库名筛选
-🔍 智能搜索	基于项目名称、简介、标签、语言的模糊匹配与语义搜索
-🧠 智能分类	使用嵌入模型（Embedding）对项目简介聚类，自动生成主题分类（如：AI、Web、DevOps 等）
-🎯 智能推荐	基于相似度推荐你可能喜欢的项目
-💾 本地缓存与增量更新	避免重复拉取 GitHub API，提高性能与速率限制利用率
-💡 可视化视图	按语言、主题、时间线展示收藏趋势
-🪄 AI 助手（可选）	接入 LLM，对仓库进行摘要、技术栈分析与学习建议
-🧩 技术栈
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/FanLu1994/github-start-drawer)
 
-前端框架：Next.js 15（App Router + Server Actions）
+### 环境变量配置
 
-UI 组件库：TailwindCSS + Shadcn/ui
+在 Vercel 部署时，需要在项目设置中配置以下环境变量：
 
-后端 API：GitHub REST / GraphQL API
+#### 必需环境变量
 
-数据存储：SQLite / PostgreSQL（可选）
+- `DEEPSEEK_API_KEY` - DeepSeek API 密钥
+- `GITHUB_TOKEN` - GitHub Personal Access Token
+- `DATABASE_URL` - 数据库连接字符串（PostgreSQL）
 
-智能层：
+#### 可选环境变量
 
-向量数据库：Chroma / Supabase Vector
+**DeepSeek 配置：**
+- `DEEPSEEK_BASE_URL` - DeepSeek API 基础 URL（默认：https://api.deepseek.com/v1）
+- `DEEPSEEK_MODEL` - 使用的模型（默认：deepseek-chat）
+- `DEEPSEEK_TEMPERATURE` - 温度参数（默认：0.7）
+- `DEEPSEEK_MAX_TOKENS` - 最大 token 数（默认：2048）
+- `DEEPSEEK_STREAMING` - 是否启用流式响应（默认：true）
+- `DEEPSEEK_TIMEOUT` - 请求超时时间（默认：30000）
 
-嵌入模型：OpenAI Embeddings / HuggingFace Sentence Transformers
+**GitHub 配置：**
+- `GITHUB_BASE_URL` - GitHub API 基础 URL（默认：https://api.github.com）
+- `GITHUB_TIMEOUT` - 请求超时时间（默认：10000）
 
-推荐算法：语义相似度 + 协同过滤
+### 部署步骤
 
+1. 点击上方「Deploy with Vercel」按钮
+2. 使用 GitHub 账号登录 Vercel
+3. 导入 `github-start-drawer` 仓库
+4. 在环境变量设置中配置上述必需环境变量
+5. 点击「Deploy」开始部署
 
-UI
-基于shadcn开发
+部署完成后，Vercel 会自动为你分配一个域名，你也可以配置自定义域名。
